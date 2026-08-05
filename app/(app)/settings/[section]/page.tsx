@@ -4,8 +4,9 @@ import { redirect }    from "next/navigation";
 
 export const metadata = { title: "Settings — Ordering Hub" };
 
+// catalog and materials have dedicated pages under settings/catalog and settings/materials
 const VALID_SECTIONS = [
-  "companies", "team", "catalog", "materials", "resources", "operations", "audit",
+  "companies", "team", "resources", "operations", "audit",
 ] as const;
 
 type Section = typeof VALID_SECTIONS[number];

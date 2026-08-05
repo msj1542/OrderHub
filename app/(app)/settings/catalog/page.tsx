@@ -3,26 +3,24 @@ import { can }           from "@/lib/authz/policy";
 import { redirect }      from "next/navigation";
 import { listProducts }  from "@/lib/catalog/service";
 import { listMaterials } from "@/lib/catalog/service";
-import { CatalogBrowse } from "@/components/catalog/catalog-browse";
+import { CatalogManager } from "@/components/catalog/catalog-manager";
 
-export const metadata = { title: "Product Catalog — Ordering Hub" };
+export const metadata = { title: "Catalog Settings — Ordering Hub" };
 
-export default async function CatalogPage() {
+export default async function CatalogSettingsPage() {
   const user = await requireUser();
-  if (!can(user, "catalog:view")) redirect("/dashboard");
+  if (!can(user, "catalog:manage")) redirect("/dashboard");
 
   const [products, materials] = await Promise.all([
-    listProducts({ includeInactive: user.role.isInternal }),
+    listProducts({ includeInactive: true }),
     listMaterials(),
   ]);
 
-  const pricingVisible = can(user, "pricing:view");
-
   return (
-    <CatalogBrowse
+    <CatalogManager
       products={products}
       materials={materials}
-      pricingVisible={pricingVisible}
+      canImport={can(user, "catalog:manage")}
     />
   );
 }
