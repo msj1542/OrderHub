@@ -1,5 +1,5 @@
 import { requireUser, getPreviewContext } from "@/lib/auth";
-import { exitPreviewAction }             from "./actions";
+import { exitPreviewAction, signOutAction } from "./actions";
 import { Sidebar }       from "@/components/layout/sidebar";
 import { Topbar }        from "@/components/layout/topbar";
 import { PreviewBanner } from "@/components/layout/preview-banner";
@@ -38,6 +38,7 @@ export default async function AppLayout({
       {/* Sidebar */}
       <Sidebar
         user={sidebarUser as typeof user}
+        signOutAction={signOutAction}
         previewBanner={
           preview ? (
             <PreviewBanner preview={preview} exitAction={exitPreviewAction} />

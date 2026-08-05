@@ -11,6 +11,7 @@ import {
   Users,
   Bell,
   Settings,
+  LogOut,
   type LucideIcon,
 } from "lucide-react";
 import { cn }         from "@/lib/utils";
@@ -60,10 +61,11 @@ function buildNav(user: AppUser): NavItem[] {
 
 interface SidebarProps {
   user: AppUser;
+  signOutAction: () => Promise<void>;
   previewBanner?: React.ReactNode;
 }
 
-export function Sidebar({ user, previewBanner }: SidebarProps) {
+export function Sidebar({ user, signOutAction, previewBanner }: SidebarProps) {
   const pathname = usePathname();
   const nav      = buildNav(user);
 
@@ -140,35 +142,68 @@ export function Sidebar({ user, previewBanner }: SidebarProps) {
         })}
       </nav>
 
-      {/* User info */}
+      {/* User info + sign-out */}
       <div
         style={{
-          padding:     "var(--space-4) var(--space-5)",
-          borderTop:   "1px solid var(--color-border-subtle)",
-          flexShrink:  0,
+          padding:    "var(--space-4) var(--space-5)",
+          borderTop:  "1px solid var(--color-border-subtle)",
+          flexShrink: 0,
         }}
       >
         <div
           style={{
-            fontSize:   "var(--text-sm)",
-            fontWeight: "var(--weight-medium)",
-            color:      "var(--color-text-primary)",
-            overflow:   "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
+            display:        "flex",
+            alignItems:     "center",
+            justifyContent: "space-between",
+            gap:            "var(--space-3)",
           }}
         >
-          {user.name}
-        </div>
-        <div
-          style={{
-            fontSize:   "var(--text-xs)",
-            color:      "var(--color-text-muted)",
-            marginTop:  "var(--space-1)",
-          }}
-        >
-          {user.role.displayName}
-          {user.company ? ` · ${user.company.name}` : ""}
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize:     "var(--text-sm)",
+                fontWeight:   "var(--weight-medium)",
+                color:        "var(--color-text-primary)",
+                overflow:     "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace:   "nowrap",
+              }}
+            >
+              {user.name}
+            </div>
+            <div
+              style={{
+                fontSize:  "var(--text-xs)",
+                color:     "var(--color-text-muted)",
+                marginTop: "var(--space-1)",
+                overflow:  "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace:   "nowrap",
+              }}
+            >
+              {user.role.displayName}
+              {user.company ? ` · ${user.company.name}` : ""}
+            </div>
+          </div>
+          <form action={signOutAction} style={{ flexShrink: 0 }}>
+            <button
+              type="submit"
+              title="Sign out"
+              style={{
+                background:   "transparent",
+                border:       "none",
+                cursor:       "pointer",
+                color:        "var(--color-text-muted)",
+                padding:      "var(--space-2)",
+                borderRadius: "var(--radius-sm)",
+                display:      "flex",
+                alignItems:   "center",
+              }}
+              className="hover:bg-[var(--color-sunken)] hover:text-[var(--color-text-primary)] transition-colors"
+            >
+              <LogOut size={14} strokeWidth={2} />
+            </button>
+          </form>
         </div>
       </div>
     </aside>

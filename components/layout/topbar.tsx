@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { Bell }        from "lucide-react";
 import Link            from "next/link";
 import type { AppUser } from "@/lib/db/schema";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 const ROUTE_TITLES: Record<string, string> = {
   "/dashboard":     "Dashboard",
@@ -64,6 +65,9 @@ export function Topbar({ user, unreadCount = 0 }: TopbarProps) {
       >
         {title}
       </h1>
+
+      {/* Dark mode toggle */}
+      <ThemeToggle />
 
       {/* Notifications */}
       <Link
