@@ -20,8 +20,8 @@ export async function GET(request: NextRequest) {
   if (token_hash && type) {
     const { error } = await supabase.auth.verifyOtp({ token_hash, type });
     if (!error) {
-      // Invite accepted — send user to the set-password page.
-      if (type === "invite") {
+      // Invite and recovery both land on /invite (account setup / password set).
+      if (type === "invite" || type === "recovery") {
         return NextResponse.redirect(`${origin}/invite`);
       }
       return NextResponse.redirect(`${origin}${next}`);
@@ -29,10 +29,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login?error=auth_failed`);
   }
 
-  // PKCE code exchange flow (OAuth, email confirm)
+  // PKCE code exchange flow (OAuth, email confirm, invite)
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      // If this was an invite via PKCE, send to account setup rather than dashboard.
+      if (type === "invite" || type === "recovery") {
+        return NextResponse.redirect(`${origin}/invite`);
+      }
       return NextResponse.redirect(`${origin}${next}`);
     }
     return NextResponse.redirect(`${origin}/login?error=auth_failed`);
