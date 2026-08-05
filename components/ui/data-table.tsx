@@ -12,6 +12,8 @@ export type Column<T> = {
   sortable?: boolean;
   width?: string;
   render: (row: T) => React.ReactNode;
+  /** Required when sortable=true. Returns a primitive for comparison so render() can return JSX. */
+  sortValue?: (row: T) => string | number;
 };
 
 interface DataTableProps<T> {
@@ -53,9 +55,14 @@ export function DataTable<T>({
     if (!sortKey || !sortDir) return 0;
     const col = columns.find((c) => c.key === sortKey);
     if (!col) return 0;
-    const av = String(col.render(a) ?? "");
-    const bv = String(col.render(b) ?? "");
-    return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+    const av = col.sortValue ? col.sortValue(a) : String(col.render(a) ?? "");
+    const bv = col.sortValue ? col.sortValue(b) : String(col.render(b) ?? "");
+    if (typeof av === "number" && typeof bv === "number") {
+      return sortDir === "asc" ? av - bv : bv - av;
+    }
+    return sortDir === "asc"
+      ? String(av).localeCompare(String(bv))
+      : String(bv).localeCompare(String(av));
   });
 
   return (

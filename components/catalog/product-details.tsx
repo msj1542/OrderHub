@@ -8,7 +8,13 @@ interface Props {
 
 export function ProductDetails({ product, pricingVisible }: Props) {
   const files = "files" in product ? product.files : [];
-  const thumbnail = files.find((f) => f.isThumbnail) ?? files.find((f) => f.mimeType?.startsWith("image/"));
+  // Prefer files[] in full-detail context; fall back to thumbnailFileId from list context.
+  // thumbnailFileId is populated by hydrateProducts so browse view doesn't need files[].
+  const thumbnailFileId =
+    files.find((f) => f.isThumbnail)?.id ??
+    files.find((f) => f.mimeType?.startsWith("image/"))?.id ??
+    product.thumbnailFileId ?? null;
+  const thumbnailSrc = thumbnailFileId ? `/api/product-files/${thumbnailFileId}` : null;
 
   const specs: [string, string][] = [
     ["Brand",            product.brand],
@@ -59,9 +65,9 @@ export function ProductDetails({ product, pricingVisible }: Props) {
           overflow:        "hidden",
         }}
       >
-        {thumbnail ? (
+        {thumbnailSrc ? (
           <img
-            src={`/api/product-files/${thumbnail.id}`}
+            src={thumbnailSrc}
             alt={`${product.sku} thumbnail`}
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />

@@ -82,6 +82,7 @@ type ProductFilters = {
   query?: string;
   isActive?: boolean;
   includeInactive?: boolean;
+  customerVisibleOnly?: boolean;
 };
 
 export async function listProducts(
@@ -91,6 +92,10 @@ export async function listProducts(
 
   if (!filters.includeInactive) {
     conditions.push(eq(products.isActive, true));
+  }
+
+  if (filters.customerVisibleOnly) {
+    conditions.push(eq(products.customerVisible, true));
   }
 
   if (filters.query && filters.query.trim()) {
@@ -250,11 +255,15 @@ export async function setProductThumbnail(productId: string, fileId: string): Pr
 async function hydrateProducts(rows: Product[]): Promise<ProductWithMaterials[]> {
   if (rows.length === 0) return [];
 
-  const [allCompat, allMaterials, allRolls, activePrices] = await Promise.all([
+  const [allCompat, allMaterials, allRolls, activePrices, thumbnails] = await Promise.all([
     db.select().from(productMaterials),
     db.select().from(materials),
     db.select().from(materialRollWidths).orderBy(materialRollWidths.widthIn),
     db.select().from(prices).where(eq(prices.isActive, true)),
+    db
+      .select({ productId: productFiles.productId, id: productFiles.id })
+      .from(productFiles)
+      .where(eq(productFiles.isThumbnail, true)),
   ]);
 
   const productIds = new Set(rows.map((p) => p.id));
@@ -281,6 +290,7 @@ async function hydrateProducts(rows: Product[]): Promise<ProductWithMaterials[]>
       }))
       .filter((p) => p.material != null);
 
-    return { ...product, materials: productMats, prices: productPrices };
+    const thumbnailFileId = thumbnails.find((t) => t.productId === product.id)?.id ?? null;
+    return { ...product, materials: productMats, prices: productPrices, thumbnailFileId };
   });
 }

@@ -12,7 +12,10 @@ export default async function CatalogPage() {
   if (!can(user, "catalog:view")) redirect("/dashboard");
 
   const [products, materials] = await Promise.all([
-    listProducts({ includeInactive: user.role.isInternal }),
+    listProducts({
+      includeInactive:    user.role.isInternal,
+      customerVisibleOnly: !user.role.isInternal,
+    }),
     listMaterials(),
   ]);
 

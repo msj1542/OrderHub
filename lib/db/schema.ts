@@ -196,6 +196,8 @@ export type MaterialWithRolls = Material & { rolls: MaterialRollWidth[] };
 export type ProductWithMaterials = Product & {
   materials: MaterialWithRolls[];
   prices: Array<Price & { material: Material }>;
+  /** UUID of the active thumbnail file, if one exists. Avoids loading the full files array in list context. */
+  thumbnailFileId: string | null;
 };
 
 /** Product detail includes files too. */

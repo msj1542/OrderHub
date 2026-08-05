@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { getUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { productFiles } from "@/lib/db/schema";
+import { productFiles, products } from "@/lib/db/schema";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const BUCKET = "product-files";
@@ -17,13 +17,20 @@ export async function GET(
 
   const { id } = await params;
 
-  const [file] = await db
-    .select()
+  const [row] = await db
+    .select({ file: productFiles, product: products })
     .from(productFiles)
+    .innerJoin(products, eq(products.id, productFiles.productId))
     .where(eq(productFiles.id, id))
     .limit(1);
 
-  if (!file) return new Response("File not found.", { status: 404 });
+  if (!row) return new Response("File not found.", { status: 404 });
+
+  // External users may only access files for active, customer-visible products.
+  const { file, product } = row;
+  if (!user.role.isInternal && (!product.isActive || !product.customerVisible)) {
+    return new Response("File not found.", { status: 404 });
+  }
 
   const admin = createAdminClient();
   const { data, error } = await admin.storage

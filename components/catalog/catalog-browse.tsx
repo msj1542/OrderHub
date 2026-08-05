@@ -28,10 +28,11 @@ export function CatalogBrowse({ products, materials, pricingVisible }: Props) {
 
   const columns: Column<ProductWithMaterials>[] = [
     {
-      key:      "product",
-      header:   "Product",
-      sortable: true,
-      render:   (p) => (
+      key:       "product",
+      header:    "Product",
+      sortable:  true,
+      sortValue: (p) => p.partName,
+      render:    (p) => (
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <span style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)", fontWeight: "var(--weight-medium)" }}>
             {p.sku}
@@ -44,10 +45,11 @@ export function CatalogBrowse({ products, materials, pricingVisible }: Props) {
       ),
     },
     {
-      key:      "vehicle",
-      header:   "Vehicle fit",
-      sortable: true,
-      render:   (p) => (
+      key:       "vehicle",
+      header:    "Vehicle fit",
+      sortable:  true,
+      sortValue: (p) => `${p.brand} ${p.model}`,
+      render:    (p) => (
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <strong>{p.brand} {p.model}</strong>
           <small style={{ color: "var(--color-text-muted)" }}>
