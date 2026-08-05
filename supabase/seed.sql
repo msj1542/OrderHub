@@ -1,0 +1,3 @@
+-- Seed data (roles, resource categories, materials/rolls, catalog CSVs,
+-- initial admin). Populated per-phase as each domain's schema lands —
+-- see REBUILD_PLAN.md "Build order (phases)".
