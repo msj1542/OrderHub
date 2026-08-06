@@ -375,12 +375,19 @@ export async function saveOrSubmitOrder(
     throw new Error("Requested completion date is required for expedited orders.");
   }
 
-  // Validate supplemental parent
+  // Validate supplemental parent — lookup runs under the requester's own scope
+  // (company/own), so a user can't attach a supplemental order to a parent
+  // order they aren't otherwise allowed to see (audit fix #11).
   if (input.supplementalToOrderId) {
+    const parentScope = orderScopeCondition(user);
     const [parent] = await db
       .select()
       .from(orders)
-      .where(eq(orders.id, input.supplementalToOrderId))
+      .where(
+        parentScope
+          ? and(eq(orders.id, input.supplementalToOrderId), parentScope)
+          : eq(orders.id, input.supplementalToOrderId),
+      )
       .limit(1);
     if (!parent || parent.companyId !== input.companyId || parent.status === "draft") {
       throw new Error("Supplemental orders must reference a submitted order for this company.");
