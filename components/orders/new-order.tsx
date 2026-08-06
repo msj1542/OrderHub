@@ -1,0 +1,552 @@
+"use client";
+
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
+import { formatMoney } from "@/lib/pricing/money";
+import { saveOrderAction, submitOrderAction } from "@/app/(app)/orders/new/actions";
+import type { ProductWithMaterials, MaterialWithRolls, Company } from "@/lib/db/schema";
+import { Plus, Trash2, Search } from "lucide-react";
+
+// ── Types ──────────────────────────────────────────────────────
+
+type CatalogLine = {
+  id:         string; // local key
+  type:       "catalog";
+  product:    ProductWithMaterials;
+  materialId: string;
+  quantity:   number;
+};
+
+type CustomLine = {
+  id:          string;
+  type:        "custom";
+  description: string;
+  brand:       string;
+  model:       string;
+  modelYear:   string;
+  coverageArea: string;
+  materialId:  string;
+  quantity:    number;
+  notes:       string;
+};
+
+type Line = CatalogLine | CustomLine;
+
+type Props = {
+  products:   ProductWithMaterials[];
+  materials:  MaterialWithRolls[];
+  companies:  Company[];      // non-empty only for internal users
+  isInternal: boolean;
+  /** Pre-fill from an existing order (reorder or supplemental) */
+  prefillLines?: Line[];
+  prefillCompanyId?: string;
+  supplementalToOrderId?: string;
+  defaultCompanyId?: string;  // for external users
+};
+
+// ── Line subtotal ──────────────────────────────────────────────
+
+function getLinePrice(line: Line, products: ProductWithMaterials[]): number | null {
+  if (line.type === "custom") return null;
+  const priceEntry = line.product.prices.find((p) => p.material.id === line.materialId && p.isActive);
+  return priceEntry ? parseFloat(priceEntry.unitPrice) : null;
+}
+
+let localId = 0;
+function nextId() { return String(++localId); }
+
+// ── Component ─────────────────────────────────────────────────
+
+export function NewOrder({
+  products,
+  materials,
+  companies,
+  isInternal,
+  prefillLines,
+  supplementalToOrderId,
+  defaultCompanyId,
+}: Props) {
+  const router = useRouter();
+
+  // Form state
+  const [companyId, setCompanyId]       = React.useState(defaultCompanyId ?? companies[0]?.id ?? "");
+  const [poNumber, setPoNumber]         = React.useState("");
+  const [isExpedited, setIsExpedited]   = React.useState(false);
+  const [requestedDate, setRequestedDate] = React.useState("");
+  const [customerNotes, setCustomerNotes] = React.useState("");
+  const [internalNotes, setInternalNotes] = React.useState("");
+  const [lines, setLines]               = React.useState<Line[]>(prefillLines ?? []);
+  const [error, setError]               = React.useState<string | null>(null);
+  const [dupWarning, setDupWarning]     = React.useState<{ orderId: string; orderNumber: string | null } | null>(null);
+  const [pending, setPending]           = React.useState<"draft" | "submit" | null>(null);
+
+  // Catalog search state
+  const [catalogSearch, setCatalogSearch] = React.useState("");
+  const [showSearch, setShowSearch]       = React.useState(false);
+  const [showCustomForm, setShowCustomForm] = React.useState(false);
+
+  // Custom item form state
+  const [customForm, setCustomForm] = React.useState({
+    description: "", brand: "", model: "", modelYear: "", coverageArea: "", materialId: "", quantity: 1, notes: "",
+  });
+
+  // ── Search / filter catalog ──────────────────────────────────
+
+  const visibleProducts = products.filter((p) => {
+    if (!catalogSearch.trim()) return true;
+    const q = catalogSearch.toLowerCase();
+    return (
+      p.brand.toLowerCase().includes(q) ||
+      p.model.toLowerCase().includes(q) ||
+      p.sku.toLowerCase().includes(q)   ||
+      p.partName.toLowerCase().includes(q)
+    );
+  });
+
+  // ── Add line from catalog ────────────────────────────────────
+
+  function addCatalogLine(product: ProductWithMaterials) {
+    const defaultMat = product.materials[0];
+    if (!defaultMat) return;
+    setLines((prev) => [
+      ...prev,
+      {
+        id:         nextId(),
+        type:       "catalog",
+        product,
+        materialId: defaultMat.id,
+        quantity:   1,
+      },
+    ]);
+    setShowSearch(false);
+    setCatalogSearch("");
+  }
+
+  function addCustomLine() {
+    if (!customForm.description || !customForm.brand || !customForm.model || !customForm.modelYear || !customForm.coverageArea || !customForm.materialId) {
+      return;
+    }
+    setLines((prev) => [
+      ...prev,
+      { ...customForm, id: nextId(), type: "custom" },
+    ]);
+    setCustomForm({ description: "", brand: "", model: "", modelYear: "", coverageArea: "", materialId: "", quantity: 1, notes: "" });
+    setShowCustomForm(false);
+  }
+
+  function removeLine(id: string) {
+    setLines((prev) => prev.filter((l) => l.id !== id));
+  }
+
+  function updateLine(id: string, patch: Partial<Line>) {
+    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } as Line : l)));
+  }
+
+  // ── Totals ───────────────────────────────────────────────────
+
+  const subtotal = lines.reduce((sum, line) => {
+    const price = getLinePrice(line, products);
+    if (price == null) return sum;
+    return sum + price * line.quantity;
+  }, 0);
+
+  // ── Submit helpers ───────────────────────────────────────────
+
+  function buildFormData(mode: "draft" | "submit", confirmDuplicate = false): FormData {
+    const fd = new FormData();
+    fd.set("companyId",   companyId);
+    fd.set("poNumber",    poNumber);
+    fd.set("isExpedited", isExpedited ? "true" : "false");
+    fd.set("requestedDate", requestedDate);
+    fd.set("customerNotes", customerNotes);
+    if (isInternal) fd.set("internalNotes", internalNotes);
+    if (supplementalToOrderId) fd.set("supplementalToOrderId", supplementalToOrderId);
+    if (confirmDuplicate) fd.set("confirmDuplicate", "true");
+    fd.set("lines", JSON.stringify(
+      lines.map((l) =>
+        l.type === "catalog"
+          ? { isCustom: false, productId: l.product.id, materialId: l.materialId, quantity: l.quantity }
+          : { isCustom: true, description: l.description, brand: l.brand, model: l.model, modelYear: l.modelYear, coverageArea: l.coverageArea, materialId: l.materialId, quantity: l.quantity, notes: l.notes },
+      ),
+    ));
+    return fd;
+  }
+
+  async function handleSubmit(mode: "draft" | "submit", confirmDuplicate = false) {
+    if (!companyId) { setError("Select a company."); return; }
+    if (lines.length === 0) { setError("Add at least one item."); return; }
+    if (isExpedited && !requestedDate) { setError("Select a requested completion date for expedited orders."); return; }
+
+    setPending(mode);
+    setError(null);
+    setDupWarning(null);
+
+    try {
+      const fd = buildFormData(mode, confirmDuplicate);
+      const action = mode === "draft" ? saveOrderAction : submitOrderAction;
+      const result = await action(undefined, fd);
+
+      if (!result) { setError("Unknown error."); return; }
+
+      if ("duplicateOrderId" in result && result.duplicateOrderId) {
+        setDupWarning({ orderId: result.duplicateOrderId, orderNumber: result.duplicateOrderNumber ?? null });
+        return;
+      }
+      if (result.error) { setError(result.error); return; }
+      if (result.orderId) { router.push(`/orders?id=${result.orderId}`); }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "An unexpected error occurred.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  // ── Render ────────────────────────────────────────────────────
+
+  return (
+    <div className="max-w-3xl mx-auto flex flex-col gap-[var(--space-8)] p-[var(--space-6)]">
+      <div>
+        <h1 className="text-[var(--text-xl)] font-[var(--weight-semibold)]">
+          {supplementalToOrderId ? "New Supplemental Order" : "New Order"}
+        </h1>
+        {supplementalToOrderId && (
+          <p className="text-[var(--text-sm)] text-[var(--color-text-muted)] mt-[var(--space-1)]">
+            This order will be linked to the parent order.
+          </p>
+        )}
+      </div>
+
+      {error && <Alert variant="danger">{error}</Alert>}
+
+      {dupWarning && (
+        <Alert variant="warning">
+          <p className="mb-[var(--space-3)]">
+            PO number <strong>{poNumber}</strong> was recently used on order{" "}
+            <strong>{dupWarning.orderNumber ?? dupWarning.orderId}</strong>.
+            Submit anyway?
+          </p>
+          <div className="flex gap-[var(--space-3)]">
+            <Button size="sm" variant="danger" onClick={() => handleSubmit("submit", true)} disabled={!!pending}>
+              Submit Anyway
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setDupWarning(null)}>
+              Go Back
+            </Button>
+          </div>
+        </Alert>
+      )}
+
+      {/* Company selector (internal only) */}
+      {isInternal && !supplementalToOrderId && (
+        <div className="flex flex-col gap-[var(--space-2)]">
+          <Label htmlFor="companyId">Company</Label>
+          <Select value={companyId} onValueChange={setCompanyId}>
+            <SelectTrigger id="companyId">
+              <SelectValue placeholder="Select company…" />
+            </SelectTrigger>
+            <SelectContent>
+              {companies.map((c) => (
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {/* Order details */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-4)]">
+        <div className="flex flex-col gap-[var(--space-2)]">
+          <Label htmlFor="poNumber">PO Number</Label>
+          <Input id="poNumber" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} placeholder="Optional" />
+        </div>
+        <div className="flex flex-col gap-[var(--space-2)]">
+          <div className="flex items-center gap-[var(--space-2)]">
+            <Checkbox
+              id="isExpedited"
+              checked={isExpedited}
+              onCheckedChange={(v) => { setIsExpedited(!!v); if (!v) setRequestedDate(""); }}
+            />
+            <Label htmlFor="isExpedited" className="cursor-pointer">Expedited Order</Label>
+          </div>
+          {isExpedited && (
+            <Input
+              type="date"
+              value={requestedDate}
+              onChange={(e) => setRequestedDate(e.target.value)}
+              placeholder="Requested completion date"
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Line items */}
+      <section className="flex flex-col gap-[var(--space-4)]">
+        <h2 className="text-[var(--text-md)] font-[var(--weight-semibold)]">Items</h2>
+
+        {lines.length === 0 && (
+          <p className="text-[var(--text-sm)] text-[var(--color-text-muted)]">
+            No items added yet. Use the buttons below to add catalog items or custom items.
+          </p>
+        )}
+
+        {lines.map((line) => (
+          <div
+            key={line.id}
+            className="flex flex-col gap-[var(--space-3)] p-[var(--space-4)] rounded-[var(--radius-md)] border border-[var(--color-border-default)] bg-[var(--color-panel)]"
+          >
+            {line.type === "catalog" ? (
+              <>
+                <div className="flex items-start justify-between gap-[var(--space-3)]">
+                  <div>
+                    <p className="text-[var(--text-sm)] font-[var(--weight-medium)]">
+                      {line.product.sku} — {line.product.description}
+                    </p>
+                    <p className="text-[var(--text-xs)] text-[var(--color-text-muted)]">
+                      {line.product.brand} · {line.product.model}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeLine(line.id)}
+                    className="text-[var(--color-text-muted)] hover:text-[var(--status-danger-text)] transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-[var(--space-3)] items-end">
+                  <div className="flex flex-col gap-[var(--space-1)] min-w-[140px]">
+                    <Label className="text-[var(--text-xs)]">Material</Label>
+                    <Select
+                      value={line.materialId}
+                      onValueChange={(v) => updateLine(line.id, { materialId: v })}
+                    >
+                      <SelectTrigger className="h-8 text-[var(--text-sm)]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {line.product.materials.map((m) => (
+                          <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-[var(--space-1)] w-20">
+                    <Label className="text-[var(--text-xs)]">Qty</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      className="h-8 text-[var(--text-sm)]"
+                      value={line.quantity}
+                      onChange={(e) => updateLine(line.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                    />
+                  </div>
+                  {(() => {
+                    const price = getLinePrice(line, products);
+                    return price != null ? (
+                      <span className="text-[var(--text-sm)] text-[var(--color-text-muted)] pb-[var(--space-1)]">
+                        {formatMoney(price)} × {line.quantity} = {formatMoney(price * line.quantity)}
+                      </span>
+                    ) : null;
+                  })()}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-start justify-between">
+                  <Badge variant="warning">Custom Item</Badge>
+                  <button type="button" onClick={() => removeLine(line.id)} className="text-[var(--color-text-muted)] hover:text-[var(--status-danger-text)]">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                <p className="text-[var(--text-sm)]">
+                  {line.brand} {line.model} {line.modelYear} — {line.coverageArea}
+                </p>
+                <p className="text-[var(--text-xs)] text-[var(--color-text-muted)]">{line.description}</p>
+                <div className="flex gap-[var(--space-3)]">
+                  <div className="flex flex-col gap-[var(--space-1)] min-w-[140px]">
+                    <Label className="text-[var(--text-xs)]">Material</Label>
+                    <Select value={line.materialId} onValueChange={(v) => updateLine(line.id, { materialId: v })}>
+                      <SelectTrigger className="h-8 text-[var(--text-sm)]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {materials.map((m) => (
+                          <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-[var(--space-1)] w-20">
+                    <Label className="text-[var(--text-xs)]">Qty</Label>
+                    <Input type="number" min={1} className="h-8 text-[var(--text-sm)]" value={line.quantity} onChange={(e) => updateLine(line.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })} />
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+
+        {/* Add catalog item */}
+        {showSearch && (
+          <div className="flex flex-col gap-[var(--space-3)] p-[var(--space-4)] rounded-[var(--radius-md)] border border-[var(--color-brand)] bg-[var(--color-panel)]">
+            <div className="flex items-center gap-[var(--space-2)]">
+              <Search size={14} className="text-[var(--color-text-muted)]" />
+              <Input
+                autoFocus
+                placeholder="Search by brand, model, SKU, or part…"
+                value={catalogSearch}
+                onChange={(e) => setCatalogSearch(e.target.value)}
+                className="border-0 p-0 focus-visible:ring-0 shadow-none"
+              />
+              <button type="button" onClick={() => { setShowSearch(false); setCatalogSearch(""); }} className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] text-[var(--text-xs)]">
+                Cancel
+              </button>
+            </div>
+            {catalogSearch.length >= 1 && (
+              <div className="max-h-60 overflow-auto flex flex-col divide-y divide-[var(--color-border-subtle)]">
+                {visibleProducts.slice(0, 30).map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => addCatalogLine(p)}
+                    className="text-left px-[var(--space-2)] py-[var(--space-2)] hover:bg-[var(--color-sunken)] transition-colors"
+                  >
+                    <p className="text-[var(--text-sm)] font-[var(--weight-medium)]">{p.sku} — {p.partName}</p>
+                    <p className="text-[var(--text-xs)] text-[var(--color-text-muted)]">{p.brand} · {p.model}</p>
+                  </button>
+                ))}
+                {visibleProducts.length === 0 && (
+                  <p className="text-[var(--text-sm)] text-[var(--color-text-muted)] py-[var(--space-3)] px-[var(--space-2)]">No products found.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Add custom item form */}
+        {showCustomForm && (
+          <div className="flex flex-col gap-[var(--space-3)] p-[var(--space-4)] rounded-[var(--radius-md)] border border-[var(--color-border-default)] bg-[var(--color-panel)]">
+            <p className="text-[var(--text-sm)] font-[var(--weight-semibold)]">Custom Item Request</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-3)]">
+              <div className="flex flex-col gap-[var(--space-1)]">
+                <Label className="text-[var(--text-xs)]">Description *</Label>
+                <Input value={customForm.description} onChange={(e) => setCustomForm({ ...customForm, description: e.target.value })} placeholder="What film coverage?" />
+              </div>
+              <div className="flex flex-col gap-[var(--space-1)]">
+                <Label className="text-[var(--text-xs)]">Brand *</Label>
+                <Input value={customForm.brand} onChange={(e) => setCustomForm({ ...customForm, brand: e.target.value })} placeholder="e.g. Harley-Davidson" />
+              </div>
+              <div className="flex flex-col gap-[var(--space-1)]">
+                <Label className="text-[var(--text-xs)]">Model *</Label>
+                <Input value={customForm.model} onChange={(e) => setCustomForm({ ...customForm, model: e.target.value })} placeholder="e.g. Road Glide" />
+              </div>
+              <div className="flex flex-col gap-[var(--space-1)]">
+                <Label className="text-[var(--text-xs)]">Year *</Label>
+                <Input value={customForm.modelYear} onChange={(e) => setCustomForm({ ...customForm, modelYear: e.target.value })} placeholder="e.g. 2024" />
+              </div>
+              <div className="flex flex-col gap-[var(--space-1)]">
+                <Label className="text-[var(--text-xs)]">Coverage Area *</Label>
+                <Input value={customForm.coverageArea} onChange={(e) => setCustomForm({ ...customForm, coverageArea: e.target.value })} placeholder="e.g. Tank" />
+              </div>
+              <div className="flex flex-col gap-[var(--space-1)]">
+                <Label className="text-[var(--text-xs)]">Material *</Label>
+                <Select value={customForm.materialId} onValueChange={(v) => setCustomForm({ ...customForm, materialId: v })}>
+                  <SelectTrigger><SelectValue placeholder="Select material…" /></SelectTrigger>
+                  <SelectContent>
+                    {materials.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-[var(--space-1)]">
+                <Label className="text-[var(--text-xs)]">Quantity</Label>
+                <Input type="number" min={1} value={customForm.quantity} onChange={(e) => setCustomForm({ ...customForm, quantity: Math.max(1, parseInt(e.target.value) || 1) })} />
+              </div>
+              <div className="flex flex-col gap-[var(--space-1)] sm:col-span-2">
+                <Label className="text-[var(--text-xs)]">Notes</Label>
+                <Input value={customForm.notes} onChange={(e) => setCustomForm({ ...customForm, notes: e.target.value })} placeholder="Any additional details for the team…" />
+              </div>
+            </div>
+            <div className="flex gap-[var(--space-3)]">
+              <Button size="sm" type="button" onClick={addCustomLine}>Add Item</Button>
+              <Button size="sm" variant="secondary" type="button" onClick={() => setShowCustomForm(false)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+
+        {/* Add buttons */}
+        {!showSearch && !showCustomForm && (
+          <div className="flex gap-[var(--space-3)]">
+            <Button size="sm" variant="secondary" type="button" onClick={() => setShowSearch(true)}>
+              <Plus size={14} /> Add from Catalog
+            </Button>
+            <Button size="sm" variant="ghost" type="button" onClick={() => setShowCustomForm(true)}>
+              <Plus size={14} /> Custom Item
+            </Button>
+          </div>
+        )}
+      </section>
+
+      {/* Summary */}
+      {subtotal > 0 && (
+        <div className="flex justify-end">
+          <div className="text-[var(--text-sm)] space-y-[var(--space-2)]">
+            <div className="flex justify-between gap-[var(--space-10)]">
+              <span className="text-[var(--color-text-muted)]">Subtotal</span>
+              <span>{formatMoney(subtotal)}</span>
+            </div>
+            {isExpedited && (
+              <div className="flex justify-between gap-[var(--space-10)]">
+                <span className="text-[var(--color-text-muted)]">Rush Fee</span>
+                <span className="text-[var(--status-urgent-text)]">Calculated on submit</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Notes */}
+      <div className="flex flex-col gap-[var(--space-4)]">
+        <div className="flex flex-col gap-[var(--space-2)]">
+          <Label htmlFor="customerNotes">Order Notes (visible to customer)</Label>
+          <Textarea id="customerNotes" rows={3} value={customerNotes} onChange={(e) => setCustomerNotes(e.target.value)} placeholder="Any notes for the order team…" />
+        </div>
+        {isInternal && (
+          <div className="flex flex-col gap-[var(--space-2)]">
+            <Label htmlFor="internalNotes">Internal Notes (hidden from customer)</Label>
+            <Textarea id="internalNotes" rows={2} value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} placeholder="Internal staff notes…" />
+          </div>
+        )}
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex items-center justify-between gap-[var(--space-4)] pt-[var(--space-4)] border-t border-[var(--color-border-subtle)]">
+        <Button variant="secondary" onClick={() => router.back()} disabled={!!pending}>
+          Cancel
+        </Button>
+        <div className="flex gap-[var(--space-3)]">
+          <Button
+            variant="secondary"
+            onClick={() => handleSubmit("draft")}
+            disabled={!!pending || lines.length === 0}
+          >
+            {pending === "draft" ? "Saving…" : "Save Draft"}
+          </Button>
+          <Button
+            onClick={() => handleSubmit("submit")}
+            disabled={!!pending || lines.length === 0}
+          >
+            {pending === "submit" ? "Submitting…" : "Submit Order"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

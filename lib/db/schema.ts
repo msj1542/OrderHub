@@ -160,6 +160,141 @@ export const productFilesRelations = relations(productFiles, ({ one }) => ({
   product: one(products, { fields: [productFiles.productId], references: [products.id] }),
 }));
 
+// ── Phase 3: Orders ───────────────────────────────────────────
+
+export const applicationSettings = pgTable("application_settings", {
+  key:        text("key").primaryKey(),
+  value:      text("value").notNull(),
+  modifiedBy: uuid("modified_by").references(() => users.id),
+  updatedAt:  timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const orders = pgTable("orders", {
+  id:                      uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  orderNumber:             text("order_number").unique(),
+  companyId:               uuid("company_id").notNull().references(() => companies.id),
+  createdByUserId:         uuid("created_by_user_id").notNull().references(() => users.id),
+  status:                  text("status").notNull().default("draft"),
+  isExpedited:             boolean("is_expedited").notNull().default(false),
+  requestedDate:           text("requested_date"),
+  expectedCompletionDate:  text("expected_completion_date"),
+  poNumber:                text("po_number"),
+  supplementalToOrderId:   uuid("supplemental_to_order_id"),
+  customerNotes:           text("customer_notes"),
+  internalNotes:           text("internal_notes"),
+  subtotal:                numeric("subtotal", { precision: 12, scale: 2 }).notNull().default("0"),
+  rushFee:                 numeric("rush_fee", { precision: 12, scale: 2 }).notNull().default("0"),
+  adjustment:              numeric("adjustment", { precision: 12, scale: 2 }).notNull().default("0"),
+  adjustmentReason:        text("adjustment_reason"),
+  grandTotal:              numeric("grand_total", { precision: 12, scale: 2 }).notNull().default("0"),
+  cancellationRequested:   boolean("cancellation_requested").notNull().default(false),
+  submittedAt:             timestamp("submitted_at", { withTimezone: true }),
+  acceptedAt:              timestamp("accepted_at", { withTimezone: true }),
+  releasedAt:              timestamp("released_at", { withTimezone: true }),
+  closedAt:                timestamp("closed_at", { withTimezone: true }),
+  createdAt:               timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+  updatedAt:               timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const orderLines = pgTable("order_lines", {
+  id:                  uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  orderId:             uuid("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+  productId:           uuid("product_id").references(() => products.id),
+  materialId:          uuid("material_id").references(() => materials.id),
+  skuSnapshot:         text("sku_snapshot").notNull(),
+  descriptionSnapshot: text("description_snapshot").notNull(),
+  attributesSnapshot:  text("attributes_snapshot"),
+  quantity:            integer("quantity").notNull(),
+  unitPrice:           numeric("unit_price", { precision: 12, scale: 2 }),
+  lineTotal:           numeric("line_total", { precision: 12, scale: 2 }),
+  pricingStatus:       text("pricing_status").notNull().default("priced"),
+  isCustom:            boolean("is_custom").notNull().default(false),
+  createdAt:           timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const orderComments = pgTable("order_comments", {
+  id:         uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  orderId:    uuid("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+  userId:     uuid("user_id").notNull().references(() => users.id),
+  body:       text("body").notNull(),
+  isInternal: boolean("is_internal").notNull().default(false),
+  createdAt:  timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const orderStatusHistory = pgTable("order_status_history", {
+  id:             uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  orderId:        uuid("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+  previousStatus: text("previous_status"),
+  newStatus:      text("new_status").notNull(),
+  changedBy:      uuid("changed_by").notNull().references(() => users.id),
+  reason:         text("reason"),
+  createdAt:      timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const cancellationRequests = pgTable("cancellation_requests", {
+  id:                  uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  orderId:             uuid("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+  requestedByUserId:   uuid("requested_by_user_id").notNull().references(() => users.id),
+  reason:              text("reason"),
+  status:              text("status").notNull().default("pending"),
+  resolvedByUserId:    uuid("resolved_by_user_id").references(() => users.id),
+  resolvedAt:          timestamp("resolved_at", { withTimezone: true }),
+  createdAt:           timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const auditLog = pgTable("audit_log", {
+  id:            uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId:        uuid("user_id").references(() => users.id),
+  companyId:     uuid("company_id").references(() => companies.id),
+  orderId:       uuid("order_id").references(() => orders.id),
+  entityType:    text("entity_type").notNull(),
+  entityId:      text("entity_id"),
+  action:        text("action").notNull(),
+  previousValue: text("previous_value"),
+  newValue:      text("new_value"),
+  reason:        text("reason"),
+  createdAt:     timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+// ── Phase 3 relations ─────────────────────────────────────────
+
+export const ordersRelations = relations(orders, ({ one, many }) => ({
+  company:      one(companies, { fields: [orders.companyId],        references: [companies.id] }),
+  createdBy:    one(users,     { fields: [orders.createdByUserId],  references: [users.id]     }),
+  lines:        many(orderLines),
+  comments:     many(orderComments),
+  statusHistory: many(orderStatusHistory),
+  cancellationRequests: many(cancellationRequests),
+}));
+
+export const orderLinesRelations = relations(orderLines, ({ one }) => ({
+  order:    one(orders,    { fields: [orderLines.orderId],    references: [orders.id]    }),
+  product:  one(products,  { fields: [orderLines.productId],  references: [products.id]  }),
+  material: one(materials, { fields: [orderLines.materialId], references: [materials.id] }),
+}));
+
+export const orderCommentsRelations = relations(orderComments, ({ one }) => ({
+  order: one(orders, { fields: [orderComments.orderId], references: [orders.id] }),
+  user:  one(users,  { fields: [orderComments.userId],  references: [users.id]  }),
+}));
+
+export const orderStatusHistoryRelations = relations(orderStatusHistory, ({ one }) => ({
+  order:     one(orders, { fields: [orderStatusHistory.orderId],    references: [orders.id] }),
+  changedBy: one(users,  { fields: [orderStatusHistory.changedBy],  references: [users.id]  }),
+}));
+
+export const cancellationRequestsRelations = relations(cancellationRequests, ({ one }) => ({
+  order:       one(orders, { fields: [cancellationRequests.orderId],           references: [orders.id] }),
+  requestedBy: one(users,  { fields: [cancellationRequests.requestedByUserId], references: [users.id]  }),
+  resolvedBy:  one(users,  { fields: [cancellationRequests.resolvedByUserId],  references: [users.id]  }),
+}));
+
+export const auditLogRelations = relations(auditLog, ({ one }) => ({
+  user:    one(users,     { fields: [auditLog.userId],    references: [users.id]     }),
+  company: one(companies, { fields: [auditLog.companyId], references: [companies.id] }),
+  order:   one(orders,    { fields: [auditLog.orderId],   references: [orders.id]    }),
+}));
+
 // ── TypeScript types ──────────────────────────────────────────
 
 export type Role    = typeof roles.$inferSelect;
@@ -173,6 +308,60 @@ export type NewUser    = typeof users.$inferInsert;
 export type AppUser = User & {
   role:    Role;
   company: Company | null;
+};
+
+// Phase 3 types
+export type ApplicationSetting   = typeof applicationSettings.$inferSelect;
+export type Order                = typeof orders.$inferSelect;
+export type OrderLine            = typeof orderLines.$inferSelect;
+export type OrderComment         = typeof orderComments.$inferSelect;
+export type OrderStatusHistory   = typeof orderStatusHistory.$inferSelect;
+export type CancellationRequest  = typeof cancellationRequests.$inferSelect;
+export type AuditLogEntry        = typeof auditLog.$inferSelect;
+
+export type NewOrder             = typeof orders.$inferInsert;
+export type NewOrderLine         = typeof orderLines.$inferInsert;
+export type NewOrderComment      = typeof orderComments.$inferInsert;
+
+export type OrderStatus =
+  | "draft"
+  | "submitted"
+  | "accepted"
+  | "in_fulfillment"
+  | "fulfillment_completed"
+  | "ready_for_pickup"
+  | "released"
+  | "invoiced"
+  | "closed"
+  | "canceled";
+
+export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  draft:                 "Draft",
+  submitted:             "Submitted",
+  accepted:              "Accepted",
+  in_fulfillment:        "In Fulfillment",
+  fulfillment_completed: "Fulfillment Completed",
+  ready_for_pickup:      "Ready for Pickup",
+  released:              "Released",
+  invoiced:              "Invoiced",
+  closed:                "Closed",
+  canceled:              "Canceled",
+};
+
+/** Order with company name, creator name, and line count — used in list views. */
+export type OrderSummary = Order & {
+  companyName: string;
+  createdByName: string;
+  lineCount: number;
+};
+
+/** Full order with lines, comments, and pending cancellation request. */
+export type OrderFull = Order & {
+  companyName: string;
+  createdByName: string;
+  lines: (OrderLine & { materialName: string | null })[];
+  comments: (OrderComment & { authorName: string })[];
+  pendingCancellationRequest: (CancellationRequest & { requestedByName: string }) | null;
 };
 
 // Phase 2 types
