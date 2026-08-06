@@ -49,17 +49,23 @@ export function OrderActions({
   const [dialog, setDialog] = React.useState<string | null>(null);
   const [reason, setReason]   = React.useState("");
   const [expectedDate, setExpectedDate] = React.useState(order.expectedCompletionDate ?? "");
-  const [error, setError] = React.useState<string | null>(null);
+  const [error, setError]     = React.useState<string | null>(null);
+  const [message, setMessage] = React.useState<string | null>(null);
 
-  async function run(action: () => Promise<{ error?: string | null } | undefined | void>) {
+  async function run(action: () => Promise<{ error?: string | null; message?: string } | undefined | void>) {
     setError(null);
+    setMessage(null);
     const result = await action();
     if (result && "error" in result && result.error) {
       setError(result.error);
     } else {
       setDialog(null);
       setReason("");
-      router.refresh();
+      if (result && "message" in result && result.message) {
+        setMessage(result.message);
+      } else {
+        router.refresh();
+      }
     }
   }
 
@@ -70,6 +76,9 @@ export function OrderActions({
     <div className="flex flex-wrap gap-[var(--space-3)] items-center">
       {error && (
         <p className="w-full text-[var(--text-sm)] text-[var(--status-danger-text)]">{error}</p>
+      )}
+      {message && (
+        <p className="w-full text-[var(--text-sm)] text-[var(--status-info-text)]">{message}</p>
       )}
 
       {/* Accept */}

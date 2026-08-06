@@ -11,7 +11,7 @@ import {
   addComment,
 } from "@/lib/orders/service";
 
-type Result = { error?: string | null };
+type Result = { error?: string | null; message?: string };
 
 // ── Accept / generic status advance ───────────────────────────
 
@@ -23,7 +23,20 @@ export async function acceptOrderAction(
   try {
     const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
     assertNotPreview(preview);
-    await acceptOrder(orderId, user, expectedCompletionDate);
+
+    if (action === "accept") {
+      await acceptOrder(orderId, user, expectedCompletionDate);
+    } else if (action === "claim") {
+      // Stub: work-order creation and fulfillment wiring land in Phase 4.
+      return { message: "Order claimed. QC workflow available in Phase 4." };
+    } else if (action === "release") {
+      // Stub: invoice-verification gate lands in Phase 5.
+      return { message: "Release queued. Invoice verification required (Phase 5)." };
+    } else if (action === "close") {
+      // Stub: close lifecycle lands in Phase 5.
+      return { message: "Close queued. Full lifecycle available in Phase 5." };
+    }
+
     revalidatePath("/orders");
     return {};
   } catch (err) {
