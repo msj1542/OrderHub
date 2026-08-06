@@ -66,6 +66,10 @@ CREATE POLICY "orders_select_internal"
   USING (is_internal_user());
 
 -- External users see their company's orders (own-scope check done in app code)
+-- NOTE: This policy implements company-only scoping. The app layer enforces
+-- own-scope via orderScopeCondition(). If a future phase adds Realtime or
+-- PostgREST access to these tables, tighten this RLS to match
+-- orderScopeCondition() before enabling those features.
 CREATE POLICY "orders_select_external"
   ON public.orders FOR SELECT
   TO authenticated
@@ -117,6 +121,10 @@ CREATE POLICY "order_lines_select_internal"
   TO authenticated
   USING (is_internal_user());
 
+-- Company-only scoping (own-scope check done in app code).
+-- NOTE: The app layer enforces own-scope via orderScopeCondition(). If a
+-- future phase adds Realtime or PostgREST access to this table, tighten
+-- this RLS to match orderScopeCondition() before enabling those features.
 CREATE POLICY "order_lines_select_external"
   ON public.order_lines FOR SELECT
   TO authenticated
@@ -158,6 +166,10 @@ CREATE POLICY "order_comments_select_internal"
   TO authenticated
   USING (is_internal_user());
 
+-- Company-only scoping (own-scope check done in app code).
+-- NOTE: The app layer enforces own-scope via orderScopeCondition(). If a
+-- future phase adds Realtime or PostgREST access to this table, tighten
+-- this RLS to match orderScopeCondition() before enabling those features.
 CREATE POLICY "order_comments_select_external"
   ON public.order_comments FOR SELECT
   TO authenticated
