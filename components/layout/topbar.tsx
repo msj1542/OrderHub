@@ -1,10 +1,12 @@
 "use client";
 
+import * as React from "react";
 import { usePathname } from "next/navigation";
 import { Bell }        from "lucide-react";
 import Link            from "next/link";
 import type { AppUser } from "@/lib/db/schema";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { createClient } from "@/lib/supabase/client";
 
 const ROUTE_TITLES: Record<string, string> = {
   "/dashboard":     "Dashboard",
@@ -30,13 +32,38 @@ function pageTitle(pathname: string): string {
 
 interface TopbarProps {
   user: AppUser;
-  /** Notification badge count — wired in Phase 6. */
   unreadCount?: number;
 }
 
-export function Topbar({ user, unreadCount = 0 }: TopbarProps) {
+export function Topbar({ user, unreadCount: initialUnreadCount = 0 }: TopbarProps) {
   const pathname = usePathname();
   const title    = pageTitle(pathname);
+
+  // Server gives us the count as of the last render; a live Realtime
+  // subscription increments it in between navigations. RLS on `notifications`
+  // (see supabase/migrations/0006_phase6.sql) is what actually scopes which
+  // inserts this client receives — not this component.
+  const [unreadCount, setUnreadCount] = React.useState(initialUnreadCount);
+
+  React.useEffect(() => {
+    setUnreadCount(initialUnreadCount);
+  }, [initialUnreadCount]);
+
+  React.useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel("notifications-count")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "notifications" },
+        () => setUnreadCount((c) => c + 1),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   return (
     <header

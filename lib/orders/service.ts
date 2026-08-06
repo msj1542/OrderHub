@@ -22,6 +22,8 @@ import { checkDuplicatePO } from "@/lib/orders/duplicate";
 import { getSettings, computeExpectedCompletion, computeRushFee } from "@/lib/settings/schedule";
 import { toDecimal, addMoney } from "@/lib/pricing/money";
 import { validateInvoiceVerification, type InvoiceVerificationInput } from "@/lib/orders/invoiceVerification";
+import { insertNotification, getOrderCreatorEmail } from "@/lib/notifications/service";
+import { sendEmail } from "@/lib/notifications/email";
 
 // ── Scoping helper ─────────────────────────────────────────────
 
@@ -505,7 +507,35 @@ export async function saveOrSubmitOrder(
       newValue:   JSON.stringify({ orderNumber, subtotal, rushFee, lineCount: resolvedLines.length }),
     });
 
+    if (mode === "submit") {
+      await insertNotification(tx, {
+        companyId: input.companyId,
+        orderId,
+        event:     "order_submitted_customer",
+        title:     `${orderNumber} received`,
+        body:      "Ordering Hub recorded this order. It has not yet been accepted into production.",
+      });
+      await insertNotification(tx, {
+        orderId,
+        event: "order_submitted_internal",
+        title: `New order ${orderNumber} needs acknowledgment`,
+        body:  "Review the expected completion date, pricing, and any expedited request.",
+      });
+    }
+
     return { orderId, orderNumber, status: newStatus };
+  }).then(async (result) => {
+    if (mode === "submit") {
+      const email = await getOrderCreatorEmail(user.id);
+      if (email) {
+        await sendEmail({
+          to:      email,
+          subject: `${result.orderNumber} received`,
+          html:    `<p>We've recorded order <strong>${result.orderNumber}</strong>. It has not yet been accepted into production — we'll let you know when it is.</p>`,
+        }).catch(() => {});
+      }
+    }
+    return result;
   });
 }
 
@@ -641,6 +671,24 @@ export async function acceptOrder(
       createdAt: now,
     });
 
+    await insertNotification(tx, {
+      companyId: order.companyId,
+      orderId,
+      event:     "order_accepted",
+      title:     `${order.orderNumber} accepted`,
+      body:      "The order has been reviewed and accepted into the fulfillment queue.",
+    });
+
+    return updated;
+  }).then(async (updated) => {
+    const email = await getOrderCreatorEmail(order.createdByUserId);
+    if (email) {
+      await sendEmail({
+        to:      email,
+        subject: `${order.orderNumber} accepted`,
+        html:    `<p>Order <strong>${order.orderNumber}</strong> has been reviewed and accepted into the fulfillment queue.</p>`,
+      }).catch(() => {});
+    }
     return updated;
   });
 }
@@ -768,6 +816,24 @@ export async function invoiceVerifyOrder(
       reason:        input.discrepancyReason.trim() || null,
     });
 
+    await insertNotification(tx, {
+      companyId: order.companyId,
+      orderId,
+      event:     "ready_for_pickup",
+      title:     `${order.orderNumber} is ready for pickup`,
+      body:      "The order is complete, verified, and ready for release.",
+    });
+
+    return updated;
+  }).then(async (updated) => {
+    const email = await getOrderCreatorEmail(order.createdByUserId);
+    if (email) {
+      await sendEmail({
+        to:      email,
+        subject: `${order.orderNumber} is ready for pickup`,
+        html:    `<p>Order <strong>${order.orderNumber}</strong> is complete, verified, and ready for release.</p>`,
+      }).catch(() => {});
+    }
     return updated;
   });
 }
@@ -895,6 +961,12 @@ export async function requestCancellation(
       entityId:   orderId,
       action:     "Cancellation requested",
       reason:     reason.trim(),
+    });
+    await insertNotification(tx, {
+      orderId,
+      event: "cancellation_requested",
+      title: `Cancellation requested for ${order.orderNumber}`,
+      body:  reason.trim(),
     });
   });
 }

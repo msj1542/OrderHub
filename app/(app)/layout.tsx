@@ -3,6 +3,7 @@ import { exitPreviewAction, signOutAction } from "./actions";
 import { Sidebar }       from "@/components/layout/sidebar";
 import { Topbar }        from "@/components/layout/topbar";
 import { PreviewBanner } from "@/components/layout/preview-banner";
+import { getUnreadCount } from "@/lib/notifications/service";
 
 export default async function AppLayout({
   children,
@@ -11,6 +12,7 @@ export default async function AppLayout({
 }) {
   const user    = await requireUser();
   const preview = await getPreviewContext();
+  const unreadCount = await getUnreadCount(user);
 
   // Preview mode: render the sidebar with the preview user's role so nav
   // reflects what the previewed user would see, but the actual user record
@@ -56,7 +58,7 @@ export default async function AppLayout({
           minWidth:      0,
         }}
       >
-        <Topbar user={user} />
+        <Topbar user={user} unreadCount={unreadCount} />
 
         <main
           style={{

@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { QcModal }     from "@/components/production/qc-modal";
 import { RecutModal }  from "@/components/production/recut-modal";
+import { createClient } from "@/lib/supabase/client";
 import {
   claimWorkOrderAction,
   updatePieceProgressAction,
@@ -269,6 +270,30 @@ export function ProductionQueue({
     const params = new URLSearchParams({ tab });
     router.push(`${pathname}?${params.toString()}`);
   }
+
+  // Live updates: another user claiming/completing a work order or ticking a
+  // piece off elsewhere refreshes this view without a manual reload. RLS on
+  // both tables (see 0006_phase6.sql) already restricts delivery to internal
+  // staff — the only role that ever renders this page.
+  React.useEffect(() => {
+    const supabase = createClient();
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(() => router.refresh(), 400);
+    };
+
+    const channel = supabase
+      .channel("production-queue")
+      .on("postgres_changes", { event: "*", schema: "public", table: "production_work_orders" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "production_line_progress" }, scheduleRefresh)
+      .subscribe();
+
+    return () => {
+      if (debounce) clearTimeout(debounce);
+      supabase.removeChannel(channel);
+    };
+  }, [router]);
 
   async function handleExpand(woId: string) {
     if (expandedId === woId) {

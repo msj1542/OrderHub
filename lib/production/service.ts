@@ -18,6 +18,7 @@ import { can } from "@/lib/authz/policy";
 import { assertCanTransition } from "@/lib/orders/statusMachine";
 import { claimOrder } from "@/lib/orders/service";
 import { toDecimal } from "@/lib/pricing/money";
+import { insertNotification } from "@/lib/notifications/service";
 
 // ── QC constants ───────────────────────────────────────────────
 // Defined in lib/production/constants.ts (a pure, DB-free module) so client
@@ -404,6 +405,13 @@ export async function submitQC(
       action:        "QC completed",
       previousValue: order.status,
       newValue:      rule.toStatus!,
+    });
+
+    await insertNotification(tx, {
+      orderId: wo.orderId,
+      event:   "fulfillment_completed",
+      title:   `${order.orderNumber} requires invoice verification`,
+      body:    "Fulfillment and QC are complete. Enter and verify the external invoice before release.",
     });
   });
 }

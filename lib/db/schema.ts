@@ -18,14 +18,18 @@ export const roles = pgTable("roles", {
 });
 
 export const companies = pgTable("companies", {
-  id:             uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  name:           text("name").notNull(),
-  orderScope:     text("order_scope").notNull().default("own"),
-  pricingVisible: boolean("pricing_visible").notNull().default(true),
-  notes:          text("notes"),
-  isActive:       boolean("is_active").notNull().default(true),
-  createdAt:      timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
-  updatedAt:      timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
+  id:                 uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  name:               text("name").notNull(),
+  orderScope:         text("order_scope").notNull().default("own"),
+  pricingVisible:     boolean("pricing_visible").notNull().default(true),
+  notes:              text("notes"),
+  isActive:           boolean("is_active").notNull().default(true),
+  primaryContactName: text("primary_contact_name"),
+  contactEmail:       text("contact_email"),
+  contactPhone:       text("contact_phone"),
+  billingNotes:       text("billing_notes"),
+  createdAt:          timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+  updatedAt:          timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
 });
 
 export const users = pgTable("users", {
@@ -388,6 +392,88 @@ export const qcAttestationsRelations = relations(qcAttestations, ({ one }) => ({
   user:      one(users,                { fields: [qcAttestations.userId],      references: [users.id]                }),
 }));
 
+// ── Phase 6: Notifications & resources ─────────────────────────
+
+export const notifications = pgTable("notifications", {
+  id:        uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId:    uuid("user_id").references(() => users.id),
+  companyId: uuid("company_id").references(() => companies.id),
+  orderId:   uuid("order_id").references(() => orders.id),
+  event:     text("event").notNull(),
+  title:     text("title").notNull(),
+  body:      text("body").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const notificationReads = pgTable("notification_reads", {
+  id:             uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  notificationId: uuid("notification_id").notNull().references(() => notifications.id, { onDelete: "cascade" }),
+  userId:         uuid("user_id").notNull().references(() => users.id),
+  readAt:         timestamp("read_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const resourceCategories = pgTable("resource_categories", {
+  id:                uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  name:              text("name").notNull().unique(),
+  pricingRestricted: boolean("pricing_restricted").notNull().default(false),
+  sortOrder:         integer("sort_order").notNull().default(0),
+  createdAt:         timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const resources = pgTable("resources", {
+  id:                uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  categoryId:        uuid("category_id").notNull().references(() => resourceCategories.id),
+  productId:         uuid("product_id").references(() => products.id),
+  title:             text("title").notNull(),
+  description:       text("description"),
+  isActive:          boolean("is_active").notNull().default(true),
+  customerVisible:   boolean("customer_visible").notNull().default(true),
+  pricingRestricted: boolean("pricing_restricted").notNull().default(false),
+  currentVersionId:  uuid("current_version_id"),
+  createdAt:         timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+  updatedAt:         timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const resourceVersions = pgTable("resource_versions", {
+  id:         uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  resourceId: uuid("resource_id").notNull().references(() => resources.id, { onDelete: "cascade" }),
+  version:    text("version"),
+  filePath:   text("file_path").notNull(),
+  fileName:   text("file_name").notNull(),
+  mimeType:   text("mime_type"),
+  uploadedBy: uuid("uploaded_by").notNull().references(() => users.id),
+  createdAt:  timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+// ── Phase 6 relations ───────────────────────────────────────────
+
+export const notificationsRelations = relations(notifications, ({ one, many }) => ({
+  user:    one(users,     { fields: [notifications.userId],    references: [users.id]     }),
+  company: one(companies, { fields: [notifications.companyId], references: [companies.id] }),
+  order:   one(orders,    { fields: [notifications.orderId],   references: [orders.id]    }),
+  reads:   many(notificationReads),
+}));
+
+export const notificationReadsRelations = relations(notificationReads, ({ one }) => ({
+  notification: one(notifications, { fields: [notificationReads.notificationId], references: [notifications.id] }),
+  user:         one(users,         { fields: [notificationReads.userId],         references: [users.id]         }),
+}));
+
+export const resourceCategoriesRelations = relations(resourceCategories, ({ many }) => ({
+  resources: many(resources),
+}));
+
+export const resourcesRelations = relations(resources, ({ one, many }) => ({
+  category: one(resourceCategories, { fields: [resources.categoryId], references: [resourceCategories.id] }),
+  product:  one(products,           { fields: [resources.productId],  references: [products.id]           }),
+  versions: many(resourceVersions),
+}));
+
+export const resourceVersionsRelations = relations(resourceVersions, ({ one }) => ({
+  resource:   one(resources, { fields: [resourceVersions.resourceId], references: [resources.id] }),
+  uploadedBy: one(users,     { fields: [resourceVersions.uploadedBy], references: [users.id]      }),
+}));
+
 // ── TypeScript types ──────────────────────────────────────────
 
 export type Role    = typeof roles.$inferSelect;
@@ -553,3 +639,28 @@ export type ProductWithMaterials = Product & {
 
 /** Product detail includes files too. */
 export type ProductFull = ProductWithMaterials & { files: ProductFile[] };
+
+// Phase 6 types
+export type Notification     = typeof notifications.$inferSelect;
+export type NotificationRead = typeof notificationReads.$inferSelect;
+export type NewNotification  = typeof notifications.$inferInsert;
+
+export type NotificationWithReadState = Notification & { isRead: boolean };
+
+export type ResourceCategory = typeof resourceCategories.$inferSelect;
+export type Resource         = typeof resources.$inferSelect;
+export type ResourceVersion  = typeof resourceVersions.$inferSelect;
+
+export type NewResourceCategory = typeof resourceCategories.$inferInsert;
+export type NewResource         = typeof resources.$inferInsert;
+export type NewResourceVersion  = typeof resourceVersions.$inferInsert;
+
+/** Resource with its category name and current (latest) version file info. */
+export type ResourceWithVersion = Resource & {
+  categoryName: string;
+  currentVersion: ResourceVersion | null;
+  versionCount: number;
+};
+
+/** Resource with full version history — used in the admin manager. */
+export type ResourceFull = ResourceWithVersion & { versions: ResourceVersion[] };

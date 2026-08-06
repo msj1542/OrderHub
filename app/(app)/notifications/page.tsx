@@ -1,13 +1,12 @@
 import { requireUser } from "@/lib/auth";
+import { listNotifications } from "@/lib/notifications/service";
+import { NotificationList } from "@/components/notifications/notification-list";
 
 export const metadata = { title: "Notifications — Ordering Hub" };
 
 export default async function NotificationsPage() {
-  await requireUser();
+  const user = await requireUser();
+  const notifications = await listNotifications(user);
 
-  return (
-    <p style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
-      Notifications arrive in Phase 6.
-    </p>
-  );
+  return <NotificationList notifications={notifications} />;
 }

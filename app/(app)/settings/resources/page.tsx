@@ -2,18 +2,18 @@ import { requireUser } from "@/lib/auth";
 import { can }         from "@/lib/authz/policy";
 import { redirect }    from "next/navigation";
 import { listCategories, listResources } from "@/lib/resources/service";
-import { ResourceBrowse } from "@/components/resources/resource-browse";
+import { ResourceManager } from "@/components/resources/resource-manager";
 
-export const metadata = { title: "Resources — Ordering Hub" };
+export const metadata = { title: "Resource Settings — Ordering Hub" };
 
-export default async function ResourcesPage() {
+export default async function ResourceSettingsPage() {
   const user = await requireUser();
-  if (!can(user, "resources:download")) redirect("/dashboard");
+  if (!can(user, "resources:manage")) redirect("/dashboard");
 
   const [categories, resources] = await Promise.all([
     listCategories(),
     listResources(user),
   ]);
 
-  return <ResourceBrowse categories={categories} resources={resources} />;
+  return <ResourceManager categories={categories} resources={resources} />;
 }
