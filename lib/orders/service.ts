@@ -11,7 +11,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import {
   orders, orderLines, orderComments, orderStatusHistory,
-  cancellationRequests, auditLog, materials,
+  cancellationRequests, auditLog, materials, invoiceVerifications,
   companies, users, productionWorkOrders, productionLineProgress,
   type AppUser, type Order, type OrderFull, type OrderLine,
   type OrderSummary, type OrderStatus,
@@ -21,6 +21,7 @@ import { assertCanTransition } from "@/lib/orders/statusMachine";
 import { checkDuplicatePO } from "@/lib/orders/duplicate";
 import { getSettings, computeExpectedCompletion, computeRushFee } from "@/lib/settings/schedule";
 import { toDecimal, addMoney } from "@/lib/pricing/money";
+import { validateInvoiceVerification, type InvoiceVerificationInput } from "@/lib/orders/invoiceVerification";
 
 // ── Scoping helper ─────────────────────────────────────────────
 
@@ -690,6 +691,155 @@ export async function claimOrder(
       entityType:    "Order",
       entityId:      orderId,
       action:        statusChanged ? "Status changed" : "Work order claimed",
+      previousValue: order.status,
+      newValue:      rule.toStatus!,
+    });
+
+    return updated;
+  });
+}
+
+// ── Invoice verification ────────────────────────────────────────
+
+export async function invoiceVerifyOrder(
+  orderId: string,
+  input: InvoiceVerificationInput,
+  user: AppUser,
+): Promise<Order> {
+  if (!can(user, "order:invoice_verify")) throw new Error("Permission denied.");
+
+  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order) throw new Error("Order not found.");
+
+  const rule = assertCanTransition(
+    "invoice_verify",
+    order.status,
+    "This order is not ready for invoice verification.",
+  );
+
+  const validationError = validateInvoiceVerification(input, parseFloat(order.grandTotal));
+  if (validationError) throw new Error(validationError);
+
+  const now = new Date();
+
+  return await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(orders)
+      .set({ status: rule.toStatus!, updatedAt: now })
+      .where(eq(orders.id, orderId))
+      .returning();
+
+    await tx
+      .update(productionWorkOrders)
+      .set({ status: "awaiting_pickup", updatedAt: now })
+      .where(eq(productionWorkOrders.orderId, orderId));
+
+    await tx.insert(invoiceVerifications).values({
+      orderId,
+      userId:            user.id,
+      invoiceNumber:      input.invoiceNumber.trim(),
+      invoiceTotal:       input.invoiceTotal !== null ? toDecimal(input.invoiceTotal) : null,
+      discrepancyReason:  input.discrepancyReason.trim() || null,
+      attested:           true,
+    });
+
+    await tx.insert(orderStatusHistory).values({
+      orderId,
+      previousStatus: order.status,
+      newStatus:      rule.toStatus!,
+      changedBy:      user.id,
+    });
+    await tx.insert(auditLog).values({
+      userId:        user.id,
+      companyId:     order.companyId,
+      orderId,
+      entityType:    "Order",
+      entityId:      orderId,
+      action:        "Invoice verified",
+      previousValue: order.status,
+      newValue:      rule.toStatus!,
+      reason:        input.discrepancyReason.trim() || null,
+    });
+
+    return updated;
+  });
+}
+
+// ── Release order ────────────────────────────────────────────
+
+export async function releaseOrder(orderId: string, user: AppUser): Promise<Order> {
+  if (!can(user, "order:release")) throw new Error("Permission denied.");
+
+  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order) throw new Error("Order not found.");
+
+  const rule = assertCanTransition("release", order.status, "This order cannot be released.");
+  const now = new Date();
+
+  return await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(orders)
+      .set({ status: rule.toStatus!, releasedAt: now, updatedAt: now })
+      .where(eq(orders.id, orderId))
+      .returning();
+
+    await tx
+      .update(productionWorkOrders)
+      .set({ status: "released", releasedAt: now, updatedAt: now })
+      .where(eq(productionWorkOrders.orderId, orderId));
+
+    await tx.insert(orderStatusHistory).values({
+      orderId,
+      previousStatus: order.status,
+      newStatus:      rule.toStatus!,
+      changedBy:      user.id,
+    });
+    await tx.insert(auditLog).values({
+      userId:        user.id,
+      companyId:     order.companyId,
+      orderId,
+      entityType:    "Order",
+      entityId:      orderId,
+      action:        "Status changed",
+      previousValue: order.status,
+      newValue:      rule.toStatus!,
+    });
+
+    return updated;
+  });
+}
+
+// ── Close order ─────────────────────────────────────────────
+
+export async function closeOrder(orderId: string, user: AppUser): Promise<Order> {
+  if (!can(user, "order:close")) throw new Error("Permission denied.");
+
+  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order) throw new Error("Order not found.");
+
+  const rule = assertCanTransition("close", order.status, "This order cannot be closed.");
+  const now = new Date();
+
+  return await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(orders)
+      .set({ status: rule.toStatus!, closedAt: now, updatedAt: now })
+      .where(eq(orders.id, orderId))
+      .returning();
+
+    await tx.insert(orderStatusHistory).values({
+      orderId,
+      previousStatus: order.status,
+      newStatus:      rule.toStatus!,
+      changedBy:      user.id,
+    });
+    await tx.insert(auditLog).values({
+      userId:        user.id,
+      companyId:     order.companyId,
+      orderId,
+      entityType:    "Order",
+      entityId:      orderId,
+      action:        "Status changed",
       previousValue: order.status,
       newValue:      rule.toStatus!,
     });

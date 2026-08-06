@@ -7,14 +7,21 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { InvoiceVerifyModal } from "@/components/orders/invoice-verify-modal";
 import {
   acceptOrderAction,
   cancelOrderAction,
   requestCancellationAction,
   declineCancellationAction,
   deleteDraftAction,
+  invoiceVerifyAction,
 } from "@/app/(app)/orders/actions";
 import type { OrderFull } from "@/lib/db/schema";
+
+const NOT_REORDERABLE: string[] = ["draft", "canceled"];
+const SUPPLEMENTAL_ELIGIBLE: string[] = [
+  "accepted", "in_fulfillment", "fulfillment_completed", "ready_for_pickup", "released",
+];
 
 type Props = {
   order:        OrderFull;
@@ -28,6 +35,7 @@ type Props = {
   canQC:        boolean;
   canClaim:     boolean;
   canInvoice:   boolean;
+  canCreate:    boolean;
   isInternal:   boolean;
 };
 
@@ -43,6 +51,7 @@ export function OrderActions({
   canQC,
   canClaim,
   canInvoice,
+  canCreate,
   isInternal,
 }: Props) {
   const router = useRouter();
@@ -93,6 +102,11 @@ export function OrderActions({
         </Button>
       )}
 
+      {/* Invoice verification */}
+      {canInvoice && status === "fulfillment_completed" && (
+        <Button size="sm" onClick={() => setDialog("invoice_verify")}>Verify Invoice</Button>
+      )}
+
       {/* Release */}
       {canRelease && status === "ready_for_pickup" && (
         <Button size="sm" onClick={() => setDialog("release")}>Release Order</Button>
@@ -129,7 +143,32 @@ export function OrderActions({
         </Button>
       )}
 
+      {/* Reorder */}
+      {canCreate && !NOT_REORDERABLE.includes(status) && (
+        <Button size="sm" variant="secondary" onClick={() => router.push(`/orders/new?reorder_from=${order.id}`)}>
+          Reorder
+        </Button>
+      )}
+
+      {/* Add supplemental order */}
+      {canCreate && isInternal && !order.supplementalToOrderId && SUPPLEMENTAL_ELIGIBLE.includes(status) && (
+        <Button size="sm" variant="secondary" onClick={() => router.push(`/orders/new?supplemental_to=${order.id}`)}>
+          Add Supplemental Order
+        </Button>
+      )}
+
       {/* ── Dialogs ── */}
+
+      <InvoiceVerifyModal
+        open={dialog === "invoice_verify"}
+        order={order}
+        onClose={() => setDialog(null)}
+        onSubmit={async (input) => {
+          const result = await invoiceVerifyAction(order.id, input);
+          if (result?.error) throw new Error(result.error);
+          router.refresh();
+        }}
+      />
 
       <ConfirmDialog
         open={dialog === "accept"}

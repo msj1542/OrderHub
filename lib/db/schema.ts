@@ -343,6 +343,24 @@ export const qcAttestations = pgTable("qc_attestations", {
   createdAt:   timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
 });
 
+// ── Phase 5: Invoice verification ──────────────────────────────
+
+export const invoiceVerifications = pgTable("invoice_verifications", {
+  id:                uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  orderId:           uuid("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+  userId:            uuid("user_id").notNull().references(() => users.id),
+  invoiceNumber:     text("invoice_number"),
+  invoiceTotal:      numeric("invoice_total", { precision: 12, scale: 2 }),
+  discrepancyReason: text("discrepancy_reason"),
+  attested:          boolean("attested").notNull().default(false),
+  createdAt:         timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const invoiceVerificationsRelations = relations(invoiceVerifications, ({ one }) => ({
+  order: one(orders, { fields: [invoiceVerifications.orderId], references: [orders.id] }),
+  user:  one(users,  { fields: [invoiceVerifications.userId],  references: [users.id]  }),
+}));
+
 // ── Phase 4 relations ─────────────────────────────────────────
 
 export const productionWorkOrdersRelations = relations(productionWorkOrders, ({ one, many }) => ({
@@ -455,6 +473,9 @@ export type ProductionWorkOrder  = typeof productionWorkOrders.$inferSelect;
 export type ProductionLineProgress = typeof productionLineProgress.$inferSelect;
 export type ProductionRecut      = typeof productionRecuts.$inferSelect;
 export type QcAttestation        = typeof qcAttestations.$inferSelect;
+
+export type InvoiceVerification    = typeof invoiceVerifications.$inferSelect;
+export type NewInvoiceVerification = typeof invoiceVerifications.$inferInsert;
 
 export type NewProductionWorkOrder    = typeof productionWorkOrders.$inferInsert;
 export type NewProductionLineProgress = typeof productionLineProgress.$inferInsert;

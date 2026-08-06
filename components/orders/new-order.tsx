@@ -17,7 +17,7 @@ import { Plus, Trash2, Search } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────
 
-type CatalogLine = {
+export type CatalogLine = {
   id:         string; // local key
   type:       "catalog";
   product:    ProductWithMaterials;
@@ -25,7 +25,7 @@ type CatalogLine = {
   quantity:   number;
 };
 
-type CustomLine = {
+export type CustomLine = {
   id:          string;
   type:        "custom";
   description: string;
@@ -38,7 +38,7 @@ type CustomLine = {
   notes:       string;
 };
 
-type Line = CatalogLine | CustomLine;
+export type Line = CatalogLine | CustomLine;
 
 type Props = {
   products:   ProductWithMaterials[];

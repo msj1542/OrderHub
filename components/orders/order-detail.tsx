@@ -60,6 +60,7 @@ export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }
         canQC={can(user, "order:qc")}
         canClaim={can(user, "order:claim")}
         canInvoice={can(user, "order:invoice_verify")}
+        canCreate={can(user, "order:create")}
         isInternal={isInternal}
       />
 

@@ -20,14 +20,12 @@ import { claimOrder } from "@/lib/orders/service";
 import { toDecimal } from "@/lib/pricing/money";
 
 // ── QC constants ───────────────────────────────────────────────
+// Defined in lib/production/constants.ts (a pure, DB-free module) so client
+// components can import them without pulling in the Postgres driver.
+// Re-exported here for existing consumers (tests, other server code).
 
-export const QC_ITEMS: [string, string][] = [
-  ["orderAccuracy",      "Order accuracy — Correct SKUs, quantities, and material"],
-  ["finishQuality",      "Finish quality — Clean, dry, and free of bubbles or lifted edges"],
-  ["completionPackaging","Completion — All pieces present, labeled, and packaged correctly"],
-];
-
-export const QC_KEYS = QC_ITEMS.map(([k]) => k);
+import { QC_ITEMS, QC_KEYS } from "@/lib/production/constants";
+export { QC_ITEMS, QC_KEYS };
 
 // ── Tab filter ─────────────────────────────────────────────────
 

@@ -1,0 +1,188 @@
+"use client";
+
+import * as React from "react";
+import { Button }    from "@/components/ui/button";
+import { Input }     from "@/components/ui/input";
+import { Textarea }  from "@/components/ui/textarea";
+import { Label }     from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { formatMoney } from "@/lib/pricing/money";
+import { hasDiscrepancy } from "@/lib/orders/invoiceVerification";
+import type { OrderFull } from "@/lib/db/schema";
+
+type Props = {
+  open:    boolean;
+  order:   OrderFull;
+  onClose: () => void;
+  onSubmit: (input: {
+    invoiceNumber: string;
+    invoiceTotal: number | null;
+    discrepancyReason: string;
+    attested: boolean;
+  }) => Promise<void>;
+};
+
+export function InvoiceVerifyModal({ open, order, onClose, onSubmit }: Props) {
+  const grandTotal = parseFloat(order.grandTotal);
+
+  const [invoiceNumber, setInvoiceNumber]         = React.useState("");
+  const [invoiceTotalStr, setInvoiceTotalStr]     = React.useState(order.grandTotal);
+  const [discrepancyReason, setDiscrepancyReason] = React.useState("");
+  const [attested, setAttested]                   = React.useState(false);
+  const [busy, setBusy]                           = React.useState(false);
+  const [error, setError]                         = React.useState<string | null>(null);
+
+  const invoiceTotal = invoiceTotalStr.trim() === "" ? null : parseFloat(invoiceTotalStr);
+  const discrepant = invoiceTotal !== null && Number.isFinite(invoiceTotal) && hasDiscrepancy(invoiceTotal, grandTotal);
+  const canAttest = invoiceNumber.trim().length > 0 && (!discrepant || discrepancyReason.trim().length > 0);
+
+  function reset() {
+    setInvoiceNumber("");
+    setInvoiceTotalStr(order.grandTotal);
+    setDiscrepancyReason("");
+    setAttested(false);
+    setError(null);
+  }
+
+  async function handleSubmit() {
+    if (!canAttest || !attested) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onSubmit({
+        invoiceNumber,
+        invoiceTotal: Number.isFinite(invoiceTotal as number) ? invoiceTotal : null,
+        discrepancyReason,
+        attested,
+      });
+      reset();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to verify invoice.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) { reset(); onClose(); } }}>
+      <DialogContent style={{ maxWidth: "560px" }}>
+        <DialogHeader>
+          <DialogTitle>
+            Invoice Verification{order.orderNumber ? ` — ${order.orderNumber}` : ""}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-[var(--space-4)] py-[var(--space-2)]">
+          <p className="text-[var(--text-sm)] text-[var(--color-text-muted)]">
+            Compare the external invoice against these order lines before releasing.
+          </p>
+
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-subtle)] overflow-hidden">
+            <table className="w-full text-[var(--text-sm)]">
+              <thead>
+                <tr className="bg-[var(--color-sunken)] border-b border-[var(--color-border-subtle)]">
+                  <th className="text-left px-[var(--space-3)] py-[var(--space-2)] font-[var(--weight-medium)] text-[var(--color-text-muted)]">Item</th>
+                  <th className="text-right px-[var(--space-3)] py-[var(--space-2)] font-[var(--weight-medium)] text-[var(--color-text-muted)]">Qty</th>
+                  <th className="text-right px-[var(--space-3)] py-[var(--space-2)] font-[var(--weight-medium)] text-[var(--color-text-muted)]">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {order.lines.map((line) => (
+                  <tr key={line.id} className="border-b border-[var(--color-border-subtle)] last:border-0">
+                    <td className="px-[var(--space-3)] py-[var(--space-2)]">{line.skuSnapshot}</td>
+                    <td className="px-[var(--space-3)] py-[var(--space-2)] text-right">{line.quantity}</td>
+                    <td className="px-[var(--space-3)] py-[var(--space-2)] text-right">
+                      {formatMoney(line.lineTotal ? parseFloat(line.lineTotal) : null)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-between text-[var(--text-sm)] font-[var(--weight-semibold)] px-[var(--space-1)]">
+            <span>Order Grand Total</span>
+            <span>{formatMoney(grandTotal)}</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-[var(--space-3)]">
+            <div className="flex flex-col gap-[var(--space-2)]">
+              <Label htmlFor="invoiceNumber">Invoice Number</Label>
+              <Input
+                id="invoiceNumber"
+                value={invoiceNumber}
+                onChange={(e) => setInvoiceNumber(e.target.value)}
+                placeholder="e.g. INV-10234"
+              />
+            </div>
+            <div className="flex flex-col gap-[var(--space-2)]">
+              <Label htmlFor="invoiceTotal">Invoice Total</Label>
+              <Input
+                id="invoiceTotal"
+                type="number"
+                step="0.01"
+                value={invoiceTotalStr}
+                onChange={(e) => setInvoiceTotalStr(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {discrepant && (
+            <div className="flex flex-col gap-[var(--space-2)]">
+              <Label htmlFor="discrepancyReason">
+                Discrepancy Reason <span className="text-[var(--status-danger-text)]">(required — invoice total does not match order total)</span>
+              </Label>
+              <Textarea
+                id="discrepancyReason"
+                rows={2}
+                value={discrepancyReason}
+                onChange={(e) => setDiscrepancyReason(e.target.value)}
+                placeholder="Explain the mismatch…"
+              />
+            </div>
+          )}
+
+          <div className="border-t pt-[var(--space-3)]" style={{ borderColor: "var(--color-border-subtle)" }}>
+            <label
+              className="flex items-start gap-[var(--space-3)] cursor-pointer select-none"
+              style={{ opacity: canAttest ? 1 : 0.45 }}
+            >
+              <input
+                type="checkbox"
+                checked={attested}
+                disabled={!canAttest}
+                onChange={() => setAttested((v) => !v)}
+                className="mt-[2px] shrink-0"
+                style={{ accentColor: "var(--color-brand)" }}
+              />
+              <span className="text-[var(--text-sm)] font-[var(--weight-medium)]">
+                I have compared this invoice against the order lines above and confirm it is accurate
+                {discrepant ? ", with the discrepancy documented." : "."}
+              </span>
+            </label>
+          </div>
+
+          {error && (
+            <p className="text-[var(--text-sm)] text-[var(--status-danger-text)]">{error}</p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => { reset(); onClose(); }} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit} disabled={!canAttest || !attested || busy}>
+            {busy ? "Verifying…" : "Verify & Release to Pickup"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

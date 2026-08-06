@@ -10,7 +10,11 @@ import {
   declineCancellation,
   deleteDraft,
   addComment,
+  invoiceVerifyOrder,
+  releaseOrder,
+  closeOrder,
 } from "@/lib/orders/service";
+import type { InvoiceVerificationInput } from "@/lib/orders/invoiceVerification";
 
 type Result = { error?: string | null; message?: string };
 
@@ -30,13 +34,28 @@ export async function acceptOrderAction(
     } else if (action === "claim") {
       await claimOrder(orderId, user);
     } else if (action === "release") {
-      // Stub: invoice-verification gate lands in Phase 5.
-      return { message: "Release queued. Invoice verification required (Phase 5)." };
+      await releaseOrder(orderId, user);
     } else if (action === "close") {
-      // Stub: close lifecycle lands in Phase 5.
-      return { message: "Close queued. Full lifecycle available in Phase 5." };
+      await closeOrder(orderId, user);
     }
 
+    revalidatePath("/orders");
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Action failed." };
+  }
+}
+
+// ── Invoice verification ───────────────────────────────────────
+
+export async function invoiceVerifyAction(
+  orderId: string,
+  input: InvoiceVerificationInput,
+): Promise<Result> {
+  try {
+    const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
+    assertNotPreview(preview);
+    await invoiceVerifyOrder(orderId, input, user);
     revalidatePath("/orders");
     return {};
   } catch (err) {

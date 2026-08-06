@@ -11,7 +11,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { QC_ITEMS } from "@/lib/production/service";
+import { QC_ITEMS } from "@/lib/production/constants";
 
 type Props = {
   open:          boolean;

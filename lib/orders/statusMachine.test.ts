@@ -95,6 +95,42 @@ describe("delete_draft", () => {
   });
 });
 
+describe("release", () => {
+  it("only valid from ready_for_pickup", () => {
+    expect(getTransition("release", "ready_for_pickup")).not.toBeNull();
+    expect(getTransition("release", "fulfillment_completed")).toBeNull();
+    expect(getTransition("release", "released")).toBeNull();
+  });
+
+  it("toStatus is 'released'", () => {
+    expect(getTransition("release", "ready_for_pickup")?.toStatus).toBe("released");
+  });
+});
+
+describe("close", () => {
+  it("only valid from released", () => {
+    expect(getTransition("close", "released")).not.toBeNull();
+    expect(getTransition("close", "ready_for_pickup")).toBeNull();
+    expect(getTransition("close", "closed")).toBeNull();
+  });
+
+  it("toStatus is 'closed'", () => {
+    expect(getTransition("close", "released")?.toStatus).toBe("closed");
+  });
+});
+
+describe("invoice_verify", () => {
+  it("only valid from fulfillment_completed", () => {
+    expect(getTransition("invoice_verify", "fulfillment_completed")).not.toBeNull();
+    expect(getTransition("invoice_verify", "in_fulfillment")).toBeNull();
+    expect(getTransition("invoice_verify", "ready_for_pickup")).toBeNull();
+  });
+
+  it("toStatus is 'ready_for_pickup'", () => {
+    expect(getTransition("invoice_verify", "fulfillment_completed")?.toStatus).toBe("ready_for_pickup");
+  });
+});
+
 describe("authz actions on transitions", () => {
   it("submit requires order:submit", () => {
     expect(TRANSITIONS.submit.authzAction).toBe("order:submit");
@@ -113,5 +149,11 @@ describe("authz actions on transitions", () => {
   });
   it("decline_cancel requires order:decline_cancel", () => {
     expect(TRANSITIONS.decline_cancel.authzAction).toBe("order:decline_cancel");
+  });
+  it("release requires order:release", () => {
+    expect(TRANSITIONS.release.authzAction).toBe("order:release");
+  });
+  it("close requires order:close", () => {
+    expect(TRANSITIONS.close.authzAction).toBe("order:close");
   });
 });

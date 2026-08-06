@@ -1,8 +1,9 @@
 # OrderHub — Cumulative Handoff: Phase 0 → Phase 5
 
 > **Purpose.** This document gives a new conversation everything needed to resume
-> work from after Phase 4 into Phase 5 with no loss of context.
-> Created: 2026-08-06. Update this document after completing each phase.
+> work from after Phase 5 into Phase 6 with no loss of context.
+> Created: 2026-08-06. Updated: 2026-08-06 (Phase 5 complete). Update this
+> document after completing each phase.
 
 ---
 
@@ -15,6 +16,7 @@
 | [`build_phase_reviews/Phase4_Completion.md`](build_phase_reviews/Phase4_Completion.md) | Phase 4 completion summary (all files created, tests, decisions) |
 | [`build_phase_reviews/Phase4_Audit_1.md`](build_phase_reviews/Phase4_Audit_1.md) | Phase 4 audit findings, gap table, navigation path analysis |
 | [`build_phase_reviews/Phase4_Audit_2.md`](build_phase_reviews/Phase4_Audit_2.md) | Phase 4 audit fix summary (what landed in the final commit) |
+| [`build_phase_reviews/Phase5_Completion.md`](build_phase_reviews/Phase5_Completion.md) | Phase 5 completion summary (invoice verification, release/close, reorder/supplemental, build-blocking fixes) |
 | [`HANDOFF_Phase4-5.md`](HANDOFF_Phase4-5.md) | Phase 4→5 handoff (Realtime deferral, stub locations, Phase 5 scope) |
 | `original-reference/` | **READ-ONLY.** Reference app at `C:\Users\mjager\Documents\Codex\2026-07-29\...\work\site`. Source of truth for behavior, copy, visuals. Never edit. |
 
@@ -180,6 +182,7 @@ Migrations in `supabase/migrations/`. All applied to production Supabase.
 | `0002_catalog_materials.sql` | `materials`, `material_roll_widths`, `products`, `product_materials`, `prices`, `product_files` + Storage bucket |
 | `0003_orders.sql` | `application_settings`, `orders`, `order_lines`, `order_comments`, `order_status_history`, `cancellation_requests`, `audit_log` + `order_number_seq` sequence |
 | `0004_production.sql` | `production_work_orders`, `production_line_progress`, `production_recuts`, `qc_attestations` |
+| `0005_invoice_verification.sql` | `invoice_verifications` |
 
 **Drizzle commands (run from project root):**
 ```bash
@@ -297,22 +300,21 @@ pending (created on order:accept)
 
 **Runner:** Vitest 4 (`npm test`)  
 **Location:** `lib/**/*.test.ts` (alongside source files)  
-**Current result:** 82/82 pass (as of commit `becf909`)
+**Current result:** 101/101 pass (Phase 5)
 
 | Test file | Tests | What it covers |
 |---|---|---|
 | `lib/authz/policy.test.ts` | 23 | Role × action matrix, pricing:view special case |
-| `lib/orders/statusMachine.test.ts` | 20+ | Valid transitions, cancel paths, delete_draft |
+| `lib/orders/statusMachine.test.ts` | 30 | Valid transitions, cancel paths, delete_draft, release/close/invoice_verify guards |
 | `lib/orders/duplicate.test.ts` | 6 | Duplicate PO detection logic |
+| `lib/orders/invoiceVerification.test.ts` | 9 | Invoice verification validation (discrepancy tolerance, required fields, attestation) |
 | `lib/settings/schedule.test.ts` | 9 | computeExpectedCompletion (5 cases), computeRushFee (4 cases) |
 | `lib/production/service.test.ts` | 18 | QC validation, material usage calc, piece progress validation, WO status ordering |
 
 Tests are pure unit tests — no DB connection, no Supabase, no Next.js. Service functions
 that need DB mocking are tested via extracted pure functions. Keep this pattern.
 
-**Run before every commit.** If you add service logic, extract the pure computation parts
-and test them. New Phase 5 tests should cover: invoice verification attestation logic
-(SKU/qty/total match check), release/close state checks.
+**Run before every commit.**
 
 ---
 
@@ -337,26 +339,20 @@ and test them. New Phase 5 tests should cover: invoice verification attestation 
 | **Hostinger deploy step** | Before go-live | GitHub Action for Drizzle migrations + Hostinger build/deploy is a stub. |
 | `serverActions.allowedOrigins` | Before go-live | Add Hostinger production domain to `next.config` before deploying to prod. |
 
-### Stubs to Replace in Phase 5
+### Stubs Replaced in Phase 5 ✅
 
-In `app/(app)/orders/actions.ts`, these dispatch arms return friendly messages instead of
-executing real transitions:
+`app/(app)/orders/actions.ts`'s `"release"`/`"close"` dispatch arms now call the real
+`releaseOrder(orderId, user)` / `closeOrder(orderId, user)` service functions. A new
+`invoiceVerifyAction(orderId, input)` action + `InvoiceVerifyModal` component handle the
+`"invoice_verify"` transition, which previously had no entry point at all.
 
-```typescript
-case "release": return { success: true, message: "Release queued. Invoice verification required (Phase 5)." };
-case "close":   return { success: true, message: "Close queued. Full lifecycle available in Phase 5)." };
-```
+### Phase 5 Entry Points ✅ (previously scaffolded, now wired)
 
-Replace with:
-- `"release"` → `releaseOrder(orderId, user)` (new function, `lib/orders/service.ts`)
-- `"close"` → `closeOrder(orderId, user)` (new function, `lib/orders/service.ts`)
-
-The `"invoice_verify"` case is not yet dispatched at all — Phase 5 adds the modal + action.
-
-### Phase 5 Items That Need Entry Points (Scaffolded but Incomplete)
-
-- **Supplemental orders** — `orders.supplemental_to_order_id` FK column exists, `?supplemental_to=` param wired in `orders/new/page.tsx`, `supplementalToOrderId` flows to `saveOrSubmitOrder()`, but no "Add Supplemental" button on order detail. Add button in `order-actions.tsx` for accepted+ orders.
-- **Reorder mode** — `NewOrder` accepts `prefillLines`/`prefillCompanyId` props (scaffold only). No `?reorder_from=` param in `orders/new/page.tsx` and no service logic to load existing lines. Add entry point to order detail and load service.
+- **Supplemental orders** — "Add Supplemental Order" button now on `order-actions.tsx`
+  (internal only, `accepted`+ statuses, not itself a supplemental order).
+- **Reorder mode** — "Reorder" button now on `order-actions.tsx` (any status except
+  draft/canceled); `orders/new/page.tsx` loads the source order and rebuilds line items
+  against the current catalog.
 
 ### Minor Outstanding Gaps (Low Priority — Not Breaking)
 
@@ -365,53 +361,70 @@ The `"invoice_verify"` case is not yet dispatched at all — Phase 5 adds the mo
 
 ---
 
-## Phase 5 Starting Point
+## Phase 5 — Accounting & Lifecycle ✅
 
-**Commit at handoff:** `becf909` — `rebuild: Phase 4 audit fixes (order↔production queue linkage)`  
-**Tests:** 82/82 passing  
+Full detail in [`build_phase_reviews/Phase5_Completion.md`](build_phase_reviews/Phase5_Completion.md). Summary:
+
+- **Invoice verification**: `lib/orders/invoiceVerification.ts` (pure validation — invoice
+  number required, discrepancy reason required whenever invoice total differs from
+  `grandTotal` by more than $0.005, attestation required) + `invoiceVerifyOrder()` in
+  `lib/orders/service.ts` (role gate → status-machine gate → transaction: order →
+  `ready_for_pickup`, work order → `awaiting_pickup`, inserts `invoice_verifications` row,
+  status history, audit log). UI: `components/orders/invoice-verify-modal.tsx` shows the
+  real order lines/totals, not a fake 3-checkbox form.
+- **Release / Close**: `releaseOrder()` / `closeOrder()` in `lib/orders/service.ts` replace
+  the Phase 3/4 stub dispatch arms in `app/(app)/orders/actions.ts`. Same transactional
+  pattern as `acceptOrder`/`claimOrder` (status + timestamp + work order status + status
+  history + audit log, all in one `db.transaction`).
+- **Reorder / Supplemental entry points**: "Reorder" and "Add Supplemental Order" buttons
+  on `order-actions.tsx`, routing to `/orders/new?reorder_from=` / `?supplemental_to=`.
+  `app/(app)/orders/new/page.tsx` resolves the source order (via the existing scoped
+  `getOrder()`) and rebuilds line items against the *current* product/pricing catalog —
+  reorder prefills lines + company; supplemental prefills company only (new items against
+  an existing order, not a copy of it).
+- **Build-blocking fixes (pre-existing, not Phase 5 regressions — confirmed present on the
+  Phase 4 baseline commit `becf909` before any Phase 5 change)**:
+  - `lib/production/constants.ts` (new): `QC_ITEMS`/`QC_KEYS` moved out of
+    `lib/production/service.ts` (which imports the Postgres driver) into a pure module,
+    because `qc-modal.tsx` (a client component) was importing them from `service.ts` and
+    pulling `node:tls`/`node:perf_hooks` into the browser bundle — `npm run build` failed
+    unconditionally. `service.ts` still re-exports both for existing consumers.
+  - `components/ui/button.tsx`: added `asChild` support (`@radix-ui/react-slot`, already
+    a dependency) — `app/(app)/orders/page.tsx`'s `<Button asChild><Link>…` usage predates
+    Phase 5 but never type-checked because `Button` never declared the prop.
+  - **Without both fixes the app could not produce a production build at all**, in any phase.
+- **Tests**: 101/101 passing (was 82; +9 in `lib/orders/invoiceVerification.test.ts`, +10
+  in `lib/orders/statusMachine.test.ts` for release/close/invoice_verify guards).
+- **Known follow-up**: browser E2E of invoice-verify → release → close, reorder, and
+  supplemental was not performed this session — signing in requires entering a password,
+  which is outside what an agent may do. Verified via passing tests, a clean
+  `npm run build`, and code review against the existing accept/claim/cancel transaction
+  patterns. Recommend a manual click-through before treating Phase 5 as fully closed.
+
+---
+
+## Phase 6 Starting Point
+
+**Commit at handoff:** see `git log` for the Phase 5 commit (invoice verification, release/close, reorder/supplemental)
+**Tests:** 101/101 passing
 **Branch:** `main`
 
-### Phase 5 Objectives (from REBUILD_PLAN.md: "Accounting & Lifecycle")
+### Phase 6 Objectives (from REBUILD_PLAN.md: "Resources, notifications, settings")
 
-1. **Invoice verification** — real attestation modal replacing the current stub:
-   - Show actual order lines (SKU, qty, unit price, total) side-by-side with the purported invoice amounts
-   - User must check each line matches, or provide a documented discrepancy reason
-   - On pass: transitions `fulfillment_completed → ready_for_pickup` and updates work order to `awaiting_pickup`
-   - Service: `invoiceVerifyOrder(orderId, attestation, user)`
-   - Auth: `order:invoice_verify` (accounting + internal_admin)
-   - UI: modal in `components/orders/order-actions.tsx` (similar to QC modal pattern)
+- Resource library + manager (Supabase Storage, versions, pricing-restricted)
+- In-app notifications + Resend transactional email
+- Settings hub: companies, internal users manager, operations/schedule settings
+  (rush fee, cutoff/completion weekday, duplicate window, timezone), audit history
+- Portal preview modal UI (cookie mechanism + server guard already exist from Phase 1)
+- Realtime (Supabase Realtime) for the production queue and notifications — deferred
+  from Phase 4 per the plan's fallback clause; pick this back up here
+- Recommend also budgeting time for a manual browser click-through of Phase 5's new
+  flows (invoice verify, release, close, reorder, supplemental), since it wasn't possible
+  to verify in-browser this session without entering login credentials
 
-2. **Release** — replace stub:
-   - Transitions `ready_for_pickup → released`
-   - Updates work order to `released`
-   - Service: `releaseOrder(orderId, user)` in `lib/orders/service.ts`
-   - Auth: `order:release` (order_coordinator + internal_admin)
-   - May need a simple confirm dialog (no complex attestation)
-
-3. **Close** — replace stub:
-   - Transitions `released → closed`
-   - Service: `closeOrder(orderId, user)` in `lib/orders/service.ts`
-   - Auth: `order:close` (accounting + internal_admin)
-
-4. **Supplemental order entry point:**
-   - "Add Supplemental Order" button on order detail (visible for accepted+ orders, internal users only)
-   - Route: `/orders/new?supplemental_to={orderId}` (param already wired in `new/page.tsx`)
-
-5. **Reorder entry point:**
-   - "Reorder" button on order detail (visible for submitted+ orders)
-   - Route: `/orders/new?reorder_from={orderId}`
-   - Service: load existing lines from order, pre-fill NewOrder form
-
-### Phase 5 Non-Goals (Do Not Add)
-- Resources, notifications, Resend email → Phase 6
-- Full settings UI → Phase 6
-- Realtime → Phase 6
+### Phase 6 Non-Goals (Do Not Add)
 - Search/pagination → Phase 7
-
-### Phase 5 Expected Test Count
-Current: 82. Phase 5 should add tests for:
-- Invoice verification logic (line match check, discrepancy reason required)
-- Release/close state transition guards
+- Reminder/escalation scheduler (pg_cron), M365/Entra SSO → post-MVP, no committed phase
 
 ---
 
@@ -431,8 +444,15 @@ Current: 82. Phase 5 should add tests for:
 | `cancelOrder(orderId, user, reason)` | `submitted/accepted → canceled`, resolves cancel req |
 | `declineCancellation(orderId, user, reason?)` | Clears cancel flag, resolves cancel req |
 | `getDashboardCounts(user)` | Stat card counts for dashboard |
+| `invoiceVerifyOrder(orderId, input, user)` | `fulfillment_completed → ready_for_pickup`, WO → `awaiting_pickup`, inserts `invoice_verifications` |
+| `releaseOrder(orderId, user)` | `ready_for_pickup → released`, WO → `released` |
+| `closeOrder(orderId, user)` | `released → closed` |
 
-**Phase 5 adds:** `invoiceVerifyOrder`, `releaseOrder`, `closeOrder`
+### `lib/orders/invoiceVerification.ts` (pure, no DB import)
+| Function | What it does |
+|---|---|
+| `validateInvoiceVerification(input, grandTotal)` | Returns an error string or null; enforces invoice number, non-negative total, discrepancy reason on mismatch >$0.005, attestation |
+| `hasDiscrepancy(invoiceTotal, grandTotal)` | Shared tolerance check, also used by the modal |
 
 ### `lib/production/service.ts`
 | Function | What it does |
