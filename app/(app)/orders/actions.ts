@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser, getPreviewContext, assertNotPreview } from "@/lib/auth";
 import {
   acceptOrder,
+  claimOrder,
   cancelOrder,
   requestCancellation,
   declineCancellation,
@@ -27,8 +28,7 @@ export async function acceptOrderAction(
     if (action === "accept") {
       await acceptOrder(orderId, user, expectedCompletionDate);
     } else if (action === "claim") {
-      // Stub: work-order creation and fulfillment wiring land in Phase 4.
-      return { message: "Order claimed. QC workflow available in Phase 4." };
+      await claimOrder(orderId, user);
     } else if (action === "release") {
       // Stub: invoice-verification gate lands in Phase 5.
       return { message: "Release queued. Invoice verification required (Phase 5)." };

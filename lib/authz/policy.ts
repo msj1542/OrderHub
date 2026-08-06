@@ -56,6 +56,7 @@ export type Action =
 const ROLE_PERMISSIONS: Partial<Record<RoleCode, Set<Action>>> = {
   [ROLES.ORDER_COORDINATOR]: new Set<Action>([
     "order:create", "order:delete_draft", "order:submit", "order:accept",
+    "order:claim",
     "order:request_cancel", "order:cancel", "order:decline_cancel",
     "order:comment_internal", "order:comment_customer", "order:print_labels",
     "order:release",

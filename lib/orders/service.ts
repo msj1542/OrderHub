@@ -11,7 +11,7 @@ import { db } from "@/lib/db";
 import {
   orders, orderLines, orderComments, orderStatusHistory,
   cancellationRequests, auditLog, materials,
-  companies, users,
+  companies, users, productionWorkOrders,
   type AppUser, type Order, type OrderFull, type OrderLine,
   type OrderSummary, type OrderStatus,
 } from "@/lib/db/schema";
@@ -584,6 +584,76 @@ export async function acceptOrder(
       newValue:       rule.toStatus!,
     });
 
+    // Create production work order (one per order, created on accept)
+    await tx.insert(productionWorkOrders).values({
+      orderId,
+      status:    "pending",
+      dueDate:   completionDate ?? null,
+      updatedAt: now,
+      createdAt: now,
+    });
+
+    return updated;
+  });
+}
+
+// ── Claim order (start fulfillment) ───────────────────────────
+
+export async function claimOrder(
+  orderId: string,
+  user: AppUser,
+): Promise<Order> {
+  if (!can(user, "order:claim")) throw new Error("Permission denied.");
+
+  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order) throw new Error("Order not found.");
+
+  const rule = assertCanTransition("claim", order.status, "This order cannot be claimed.");
+  const now  = new Date();
+  const statusChanged = order.status !== rule.toStatus;
+
+  return await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(orders)
+      .set({ status: rule.toStatus!, updatedAt: now })
+      .where(eq(orders.id, orderId))
+      .returning();
+
+    // Advance work order: pending → in_progress (idempotent if already in_progress)
+    await tx
+      .update(productionWorkOrders)
+      .set({
+        status:          "in_progress",
+        claimedByUserId: user.id,
+        startedAt:       now,
+        updatedAt:       now,
+      })
+      .where(
+        and(
+          eq(productionWorkOrders.orderId, orderId),
+          inArray(productionWorkOrders.status, ["pending", "in_progress"]),
+        ),
+      );
+
+    if (statusChanged) {
+      await tx.insert(orderStatusHistory).values({
+        orderId,
+        previousStatus: order.status,
+        newStatus:      rule.toStatus!,
+        changedBy:      user.id,
+      });
+    }
+    await tx.insert(auditLog).values({
+      userId:        user.id,
+      companyId:     order.companyId,
+      orderId,
+      entityType:    "Order",
+      entityId:      orderId,
+      action:        statusChanged ? "Status changed" : "Work order claimed",
+      previousValue: order.status,
+      newValue:      rule.toStatus!,
+    });
+
     return updated;
   });
 }
@@ -728,10 +798,11 @@ export async function declineCancellation(
 // ── Dashboard counts ───────────────────────────────────────────
 
 export type DashboardCounts = {
-  submittedCount:    number;
-  expeditedCount:    number;
-  cancellationCount: number;
-  draftCount:        number;
+  submittedCount:        number;
+  expeditedCount:        number;
+  cancellationCount:     number;
+  draftCount:            number;
+  pendingWorkOrderCount: number;
 };
 
 export async function getDashboardCounts(user: AppUser): Promise<DashboardCounts> {
@@ -739,11 +810,13 @@ export async function getDashboardCounts(user: AppUser): Promise<DashboardCounts
     const [submitted]    = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(eq(orders.status, "submitted"));
     const [expedited]    = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(eq(orders.isExpedited, true), inArray(orders.status as any, ["submitted", "accepted", "in_fulfillment"])));
     const [cancellation] = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(eq(orders.cancellationRequested, true));
+    const [pendingWO]    = await db.select({ n: sql<number>`count(*)::int` }).from(productionWorkOrders).where(eq(productionWorkOrders.status, "pending"));
     return {
-      submittedCount:    submitted.n,
-      expeditedCount:    expedited.n,
-      cancellationCount: cancellation.n,
-      draftCount:        0,
+      submittedCount:        submitted.n,
+      expeditedCount:        expedited.n,
+      cancellationCount:     cancellation.n,
+      draftCount:            0,
+      pendingWorkOrderCount: pendingWO.n,
     };
   } else {
     const scope = orderScopeCondition(user);
@@ -751,10 +824,11 @@ export async function getDashboardCounts(user: AppUser): Promise<DashboardCounts
     const [drafts] = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(...conds, eq(orders.status, "draft")));
     const submitted = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(...conds, or(eq(orders.status, "submitted"), eq(orders.status, "accepted"))));
     return {
-      submittedCount:    submitted[0].n,
-      expeditedCount:    0,
-      cancellationCount: 0,
-      draftCount:        drafts.n,
+      submittedCount:        submitted[0].n,
+      expeditedCount:        0,
+      cancellationCount:     0,
+      draftCount:            drafts.n,
+      pendingWorkOrderCount: 0,
     };
   }
 }

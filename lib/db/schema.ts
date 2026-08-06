@@ -265,6 +265,7 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
   comments:     many(orderComments),
   statusHistory: many(orderStatusHistory),
   cancellationRequests: many(cancellationRequests),
+  workOrder:    one(productionWorkOrders, { fields: [orders.id], references: [productionWorkOrders.orderId] }),
 }));
 
 export const orderLinesRelations = relations(orderLines, ({ one }) => ({
@@ -293,6 +294,80 @@ export const auditLogRelations = relations(auditLog, ({ one }) => ({
   user:    one(users,     { fields: [auditLog.userId],    references: [users.id]     }),
   company: one(companies, { fields: [auditLog.companyId], references: [companies.id] }),
   order:   one(orders,    { fields: [auditLog.orderId],   references: [orders.id]    }),
+}));
+
+// ── Phase 4: Production queue ─────────────────────────────────
+
+export const productionWorkOrders = pgTable("production_work_orders", {
+  id:              uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  orderId:         uuid("order_id").notNull().unique().references(() => orders.id, { onDelete: "cascade" }),
+  status:          text("status").notNull().default("pending"),
+  dueDate:         text("due_date"),
+  claimedByUserId: uuid("claimed_by_user_id").references(() => users.id),
+  startedAt:       timestamp("started_at",   { withTimezone: true }),
+  completedAt:     timestamp("completed_at", { withTimezone: true }),
+  releasedAt:      timestamp("released_at",  { withTimezone: true }),
+  canceledAt:      timestamp("canceled_at",  { withTimezone: true }),
+  createdAt:       timestamp("created_at",   { withTimezone: true }).notNull().default(sql`now()`),
+  updatedAt:       timestamp("updated_at",   { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const productionLineProgress = pgTable("production_line_progress", {
+  id:              uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  workOrderId:     uuid("work_order_id").notNull().references(() => productionWorkOrders.id, { onDelete: "cascade" }),
+  orderLineId:     uuid("order_line_id").notNull().references(() => orderLines.id, { onDelete: "cascade" }),
+  completedPieces: text("completed_pieces").notNull().default("[]"),
+  modifiedBy:      uuid("modified_by").references(() => users.id),
+  createdAt:       timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+  updatedAt:       timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const productionRecuts = pgTable("production_recuts", {
+  id:                  uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  workOrderId:         uuid("work_order_id").notNull().references(() => productionWorkOrders.id, { onDelete: "cascade" }),
+  orderLineId:         uuid("order_line_id").notNull().references(() => orderLines.id, { onDelete: "cascade" }),
+  quantity:            integer("quantity").notNull(),
+  reason:              text("reason").notNull(),
+  materialUsageInches: numeric("material_usage_inches", { precision: 10, scale: 4 }),
+  recordedBy:          uuid("recorded_by").notNull().references(() => users.id),
+  createdAt:           timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const qcAttestations = pgTable("qc_attestations", {
+  id:          uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  workOrderId: uuid("work_order_id").notNull().references(() => productionWorkOrders.id, { onDelete: "cascade" }),
+  userId:      uuid("user_id").notNull().references(() => users.id),
+  answers:     text("answers").notNull(),
+  notes:       text("notes"),
+  attested:    boolean("attested").notNull().default(false),
+  createdAt:   timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+// ── Phase 4 relations ─────────────────────────────────────────
+
+export const productionWorkOrdersRelations = relations(productionWorkOrders, ({ one, many }) => ({
+  order:           one(orders,    { fields: [productionWorkOrders.orderId],          references: [orders.id]    }),
+  claimedBy:       one(users,     { fields: [productionWorkOrders.claimedByUserId],  references: [users.id]     }),
+  lineProgress:    many(productionLineProgress),
+  recuts:          many(productionRecuts),
+  qcAttestations:  many(qcAttestations),
+}));
+
+export const productionLineProgressRelations = relations(productionLineProgress, ({ one }) => ({
+  workOrder:  one(productionWorkOrders, { fields: [productionLineProgress.workOrderId],  references: [productionWorkOrders.id] }),
+  orderLine:  one(orderLines,           { fields: [productionLineProgress.orderLineId],  references: [orderLines.id]           }),
+  modifiedBy: one(users,                { fields: [productionLineProgress.modifiedBy],   references: [users.id]                }),
+}));
+
+export const productionRecutsRelations = relations(productionRecuts, ({ one }) => ({
+  workOrder:   one(productionWorkOrders, { fields: [productionRecuts.workOrderId],   references: [productionWorkOrders.id] }),
+  orderLine:   one(orderLines,           { fields: [productionRecuts.orderLineId],   references: [orderLines.id]           }),
+  recordedBy:  one(users,                { fields: [productionRecuts.recordedBy],    references: [users.id]                }),
+}));
+
+export const qcAttestationsRelations = relations(qcAttestations, ({ one }) => ({
+  workOrder: one(productionWorkOrders, { fields: [qcAttestations.workOrderId], references: [productionWorkOrders.id] }),
+  user:      one(users,                { fields: [qcAttestations.userId],      references: [users.id]                }),
 }));
 
 // ── TypeScript types ──────────────────────────────────────────
@@ -362,6 +437,61 @@ export type OrderFull = Order & {
   lines: (OrderLine & { materialName: string | null })[];
   comments: (OrderComment & { authorName: string })[];
   pendingCancellationRequest: (CancellationRequest & { requestedByName: string }) | null;
+};
+
+// Phase 4 types
+export type ProductionWorkOrder  = typeof productionWorkOrders.$inferSelect;
+export type ProductionLineProgress = typeof productionLineProgress.$inferSelect;
+export type ProductionRecut      = typeof productionRecuts.$inferSelect;
+export type QcAttestation        = typeof qcAttestations.$inferSelect;
+
+export type NewProductionWorkOrder    = typeof productionWorkOrders.$inferInsert;
+export type NewProductionLineProgress = typeof productionLineProgress.$inferInsert;
+export type NewProductionRecut        = typeof productionRecuts.$inferInsert;
+export type NewQcAttestation          = typeof qcAttestations.$inferInsert;
+
+export type WorkOrderStatus =
+  | "pending"
+  | "in_progress"
+  | "completed"
+  | "awaiting_pickup"
+  | "released"
+  | "canceled";
+
+export const WORK_ORDER_STATUS_LABELS: Record<WorkOrderStatus, string> = {
+  pending:         "New",
+  in_progress:     "In Progress",
+  completed:       "Completed",
+  awaiting_pickup: "Awaiting Pickup",
+  released:        "Released",
+  canceled:        "Canceled",
+};
+
+export type WorkOrderSummary = ProductionWorkOrder & {
+  orderNumber:   string | null;
+  companyName:   string;
+  isExpedited:   boolean;
+  claimedByName: string | null;
+  totalPieces:   number;
+  doneCount:     number;
+};
+
+export type WorkOrderLineFull = OrderLine & {
+  materialName:       string | null;
+  patternLengthIn:    string | null;
+  requiredRollWidthIn: string | null;
+  progress:           { id: string; completedPieces: number[] } | null;
+  recuts:             ProductionRecut[];
+};
+
+export type WorkOrderFull = ProductionWorkOrder & {
+  orderNumber:            string | null;
+  companyName:            string;
+  isExpedited:            boolean;
+  requestedDate:          string | null;
+  expectedCompletionDate: string | null;
+  claimedByName:          string | null;
+  lines:                  WorkOrderLineFull[];
 };
 
 // Phase 2 types

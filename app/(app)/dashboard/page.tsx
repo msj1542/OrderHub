@@ -65,6 +65,14 @@ export default async function DashboardPage() {
               href="/orders"
               accent={counts.cancellationCount > 0}
             />
+            {can(user, "production:view") && (
+              <StatCard
+                label="Work Orders Pending"
+                value={counts.pendingWorkOrderCount}
+                href="/production"
+                accent={counts.pendingWorkOrderCount > 0}
+              />
+            )}
           </>
         ) : (
           <>
