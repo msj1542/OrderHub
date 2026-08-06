@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
 import { CommentComposer } from "@/components/orders/comment-composer";
 import { OrderActions } from "@/components/orders/order-actions";
+import { WorkOrderSection } from "@/components/orders/work-order-section";
 
 function formatDate(ts: string | Date | null | undefined) {
   if (!ts) return "—";
@@ -195,6 +196,9 @@ export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }
           )}
         </section>
       )}
+
+      {/* Work Order (internal only) */}
+      <WorkOrderSection workOrder={order.workOrder} user={user} />
 
       {/* Comments thread */}
       <section>

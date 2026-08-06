@@ -473,7 +473,7 @@ export function ProductionQueue({
                             Finalize Production
                           </Button>
                         )}
-                        {canPrint && (wo.status === "pending" || wo.status === "in_progress") && (
+                        {canPrint && (wo.status === "pending" || wo.status === "in_progress" || wo.status === "completed" || wo.status === "awaiting_pickup") && (
                           <>
                             <Button
                               size="sm"

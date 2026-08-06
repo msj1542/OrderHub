@@ -7,11 +7,12 @@
  */
 
 import { and, asc, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import {
   orders, orderLines, orderComments, orderStatusHistory,
   cancellationRequests, auditLog, materials,
-  companies, users, productionWorkOrders,
+  companies, users, productionWorkOrders, productionLineProgress,
   type AppUser, type Order, type OrderFull, type OrderLine,
   type OrderSummary, type OrderStatus,
 } from "@/lib/db/schema";
@@ -140,6 +141,44 @@ export async function getOrder(
     )
     .limit(1);
 
+  // Load work order brief (internal users only)
+  let workOrder: OrderFull["workOrder"] = null;
+  if (user.role.isInternal) {
+    const claimedUser = alias(users, "claimed_user");
+    const woRows = await db
+      .select({
+        id:            productionWorkOrders.id,
+        status:        productionWorkOrders.status,
+        dueDate:       productionWorkOrders.dueDate,
+        claimedByName: claimedUser.name,
+      })
+      .from(productionWorkOrders)
+      .leftJoin(claimedUser, eq(claimedUser.id, productionWorkOrders.claimedByUserId))
+      .where(eq(productionWorkOrders.orderId, id))
+      .limit(1);
+
+    if (woRows.length) {
+      const wo = woRows[0];
+      const totalPieces = lineRows.reduce((sum, { line }) => sum + line.quantity, 0);
+      const progressRows = await db
+        .select({ completedPieces: productionLineProgress.completedPieces })
+        .from(productionLineProgress)
+        .where(eq(productionLineProgress.workOrderId, wo.id));
+      const doneCount = progressRows.reduce(
+        (sum, r) => sum + (JSON.parse(r.completedPieces) as number[]).length,
+        0,
+      );
+      workOrder = {
+        id:            wo.id,
+        status:        wo.status,
+        dueDate:       wo.dueDate,
+        claimedByName: wo.claimedByName ?? null,
+        totalPieces,
+        doneCount,
+      };
+    }
+  }
+
   return {
     ...order,
     companyName,
@@ -149,6 +188,7 @@ export async function getOrder(
     pendingCancellationRequest: cancelRows.length
       ? { ...cancelRows[0].req, requestedByName: cancelRows[0].requestedByName }
       : null,
+    workOrder,
   };
 }
 

@@ -430,13 +430,24 @@ export type OrderSummary = Order & {
   lineCount: number;
 };
 
-/** Full order with lines, comments, and pending cancellation request. */
+/** Minimal work order data surfaced on the order detail page for internal users. */
+export type OrderWorkOrderBrief = {
+  id:            string;
+  status:        string;
+  dueDate:       string | null;
+  claimedByName: string | null;
+  totalPieces:   number;
+  doneCount:     number;
+};
+
+/** Full order with lines, comments, pending cancellation request, and work order (internal only). */
 export type OrderFull = Order & {
   companyName: string;
   createdByName: string;
   lines: (OrderLine & { materialName: string | null })[];
   comments: (OrderComment & { authorName: string })[];
   pendingCancellationRequest: (CancellationRequest & { requestedByName: string }) | null;
+  workOrder: OrderWorkOrderBrief | null;
 };
 
 // Phase 4 types
