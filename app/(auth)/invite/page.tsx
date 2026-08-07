@@ -7,7 +7,7 @@ import { acceptInviteAction } from "./actions";
 
 export const metadata = { title: "Accept invite — Ordering Hub" };
 
-type Props = { searchParams: Promise<{ error?: string }> };
+type Props = { searchParams: Promise<{ error?: string; flow?: string }> };
 
 const ERROR_MESSAGES: Record<string, string> = {
   missing_fields:    "Name and password are required.",
@@ -16,14 +16,19 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 export default async function InvitePage({ searchParams }: Props) {
-  // Redirect to login if there's no active session — the invite callback
-  // must have run first to establish one.
+  // Redirect to login if there's no active session — the invite/recovery
+  // callback must have run first to establish one.
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { error } = await searchParams;
+  const { error, flow } = await searchParams;
   const errorMsg = error ? (ERROR_MESSAGES[error] ?? error) : null;
+  // Reused by both first-time invite acceptance (type=invite) and password
+  // reset (type=recovery) — see app/auth/callback/page.tsx. Recovery skips
+  // the display-name field entirely so a routine password reset never
+  // touches an existing user's name.
+  const isRecovery = flow === "recovery";
 
   // Prefill name from email if not set.
   const defaultName = user.user_metadata?.full_name ?? user.email?.split("@")[0] ?? "";
@@ -68,10 +73,12 @@ export default async function InvitePage({ searchParams }: Props) {
               marginBottom: "var(--space-2)",
             }}
           >
-            Set up your account
+            {isRecovery ? "Reset your password" : "Set up your account"}
           </h1>
           <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-muted)" }}>
-            Welcome, {user.email}. Choose a display name and password to get started.
+            {isRecovery
+              ? `Enter a new password for ${user.email}.`
+              : `Welcome, ${user.email}. Choose a display name and password to get started.`}
           </p>
         </div>
 
@@ -96,18 +103,22 @@ export default async function InvitePage({ searchParams }: Props) {
           action={acceptInviteAction}
           style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)" }}
         >
-          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-            <Label htmlFor="name">Display name</Label>
-            <Input
-              id="name"
-              name="name"
-              type="text"
-              autoComplete="name"
-              required
-              defaultValue={defaultName}
-              placeholder="Your name"
-            />
-          </div>
+          <input type="hidden" name="flow" value={isRecovery ? "recovery" : "invite"} />
+
+          {!isRecovery && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+              <Label htmlFor="name">Display name</Label>
+              <Input
+                id="name"
+                name="name"
+                type="text"
+                autoComplete="name"
+                required
+                defaultValue={defaultName}
+                placeholder="Your name"
+              />
+            </div>
+          )}
 
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
             <Label htmlFor="password">Password</Label>
@@ -134,7 +145,7 @@ export default async function InvitePage({ searchParams }: Props) {
           </div>
 
           <Button type="submit" variant="primary" style={{ width: "100%", marginTop: "var(--space-2)" }}>
-            Get started
+            {isRecovery ? "Reset password" : "Get started"}
           </Button>
         </form>
       </div>
