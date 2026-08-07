@@ -1169,46 +1169,48 @@ export async function getDashboardCounts(user: AppUser): Promise<DashboardCounts
     const nowISO = new Date().toISOString().slice(0, 10);
     const weekFromNow = new Date(Date.now() + 7 * 86400_000).toISOString().slice(0, 10);
 
-    const [submitted, expedited, cancellation, pendingWO, dueThisWeek, overdue] = await Promise.all([
-      db.select({ n: sql<number>`count(*)::int` }).from(orders).where(eq(orders.status, "submitted")),
-      db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(eq(orders.isExpedited, true), inArray(orders.status as any, ["submitted", "accepted", "in_fulfillment"]))),
-      db.select({ n: sql<number>`count(*)::int` }).from(orders).where(eq(orders.cancellationRequested, true)),
-      db.select({ n: sql<number>`count(*)::int` }).from(productionWorkOrders).where(eq(productionWorkOrders.status, "pending")),
-      db.select({ n: sql<number>`count(*)::int` }).from(orders).where(
-        and(
-          inArray(orders.status as any, ["submitted", "accepted", "in_fulfillment", "fulfillment_completed"]),
-          gte(orders.expectedCompletionDate, nowISO),
-          sql`${orders.expectedCompletionDate} <= ${weekFromNow}`,
-        ),
-      ),
-      db.select({ n: sql<number>`count(*)::int` }).from(orders).where(
-        and(
-          inArray(orders.status as any, ["submitted", "accepted", "in_fulfillment", "fulfillment_completed"]),
-          sql`${orders.expectedCompletionDate} < ${nowISO}`,
-        ),
-      ),
-    ]);
+    // Single aggregate query (via FILTER) instead of 5 separate round trips —
+    // keeps the dashboard's connection-pool footprint small so a flaky
+    // network path can't tie up the whole pool on one page load.
+    const [row] = await db
+      .select({
+        submitted:    sql<number>`count(*) filter (where ${orders.status} = 'submitted')::int`,
+        expedited:    sql<number>`count(*) filter (where ${orders.isExpedited} = true and ${orders.status} in ('submitted', 'accepted', 'in_fulfillment'))::int`,
+        cancellation: sql<number>`count(*) filter (where ${orders.cancellationRequested} = true)::int`,
+        dueThisWeek:  sql<number>`count(*) filter (where ${orders.status} in ('submitted', 'accepted', 'in_fulfillment', 'fulfillment_completed') and ${orders.expectedCompletionDate} >= ${nowISO} and ${orders.expectedCompletionDate} <= ${weekFromNow})::int`,
+        overdue:      sql<number>`count(*) filter (where ${orders.status} in ('submitted', 'accepted', 'in_fulfillment', 'fulfillment_completed') and ${orders.expectedCompletionDate} < ${nowISO})::int`,
+      })
+      .from(orders);
+
+    const [pendingWO] = await db.select({ n: sql<number>`count(*)::int` }).from(productionWorkOrders).where(eq(productionWorkOrders.status, "pending"));
+
     return {
-      submittedCount:        submitted[0].n,
-      expeditedCount:        expedited[0].n,
-      cancellationCount:     cancellation[0].n,
+      submittedCount:        row.submitted,
+      expeditedCount:        row.expedited,
+      cancellationCount:     row.cancellation,
       draftCount:            0,
-      pendingWorkOrderCount: pendingWO[0].n,
-      dueThisWeekCount:      dueThisWeek[0].n,
-      overdueCount:          overdue[0].n,
+      pendingWorkOrderCount: pendingWO.n,
+      dueThisWeekCount:      row.dueThisWeek,
+      overdueCount:          row.overdue,
     };
   } else {
     const scope = orderScopeCondition(user);
     const conds = scope ? [scope] : [];
-    const [drafts] = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(...conds, eq(orders.status, "draft")));
-    const submitted = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(...conds, or(eq(orders.status, "submitted"), eq(orders.status, "accepted"))));
-    const [accepted] = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(...conds, eq(orders.status, "accepted")));
-    const [ready]    = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(...conds, eq(orders.status, "ready_for_pickup")));
+    const [row] = await db
+      .select({
+        drafts:    sql<number>`count(*) filter (where ${orders.status} = 'draft')::int`,
+        submitted: sql<number>`count(*) filter (where ${orders.status} in ('submitted', 'accepted'))::int`,
+        accepted:  sql<number>`count(*) filter (where ${orders.status} = 'accepted')::int`,
+        ready:     sql<number>`count(*) filter (where ${orders.status} = 'ready_for_pickup')::int`,
+      })
+      .from(orders)
+      .where(conds.length ? and(...conds) : undefined);
+
     return {
-      submittedCount:        submitted[0].n,
-      expeditedCount:        accepted.n,
-      cancellationCount:     ready.n,
-      draftCount:            drafts.n,
+      submittedCount:        row.submitted,
+      expeditedCount:        row.accepted,
+      cancellationCount:     row.ready,
+      draftCount:            row.drafts,
       pendingWorkOrderCount: 0,
       dueThisWeekCount:      0,
       overdueCount:          0,
@@ -1219,7 +1221,6 @@ export async function getDashboardCounts(user: AppUser): Promise<DashboardCounts
 export async function getDashboardActions(user: AppUser): Promise<DashboardAction[]> {
   if (!user.role.isInternal) return [];
 
-  const creator = alias(users, "creator");
   const company = alias(companies, "co");
 
   const actions: DashboardAction[] = [];

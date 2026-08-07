@@ -1,4 +1,4 @@
-import { and, eq, ilike, or, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   materials,
@@ -273,23 +273,27 @@ export async function setProductThumbnail(productId: string, fileId: string): Pr
 async function hydrateProducts(rows: Product[]): Promise<ProductWithMaterials[]> {
   if (rows.length === 0) return [];
 
+  const productIds = rows.map((p) => p.id);
+
+  // Scope to just this page's products (and to the small, mostly-static
+  // materials/rolls lookup tables) instead of pulling entire tables on
+  // every catalog view — keeps payload size proportional to page size.
   const [allCompat, allMaterials, allRolls, activePrices, thumbnails] = await Promise.all([
-    db.select().from(productMaterials),
+    db.select().from(productMaterials).where(inArray(productMaterials.productId, productIds)),
     db.select().from(materials),
     db.select().from(materialRollWidths).orderBy(materialRollWidths.widthIn),
-    db.select().from(prices).where(eq(prices.isActive, true)),
+    db.select().from(prices).where(and(eq(prices.isActive, true), inArray(prices.productId, productIds))),
     db
       .select({ productId: productFiles.productId, id: productFiles.id })
       .from(productFiles)
-      .where(eq(productFiles.isThumbnail, true)),
+      .where(and(eq(productFiles.isThumbnail, true), inArray(productFiles.productId, productIds))),
   ]);
 
-  const productIds = new Set(rows.map((p) => p.id));
   const materialsById = new Map(allMaterials.map((m) => [m.id, m]));
 
   return rows.map((product) => {
     const compatMaterialIds = allCompat
-      .filter((c) => productIds.has(c.productId) && c.productId === product.id)
+      .filter((c) => c.productId === product.id)
       .map((c) => c.materialId);
 
     const productMats = compatMaterialIds
