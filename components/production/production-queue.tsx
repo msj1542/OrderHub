@@ -8,6 +8,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { ClipboardCheck } from "lucide-react";
 import { QcModal }     from "@/components/production/qc-modal";
 import { RecutModal }  from "@/components/production/recut-modal";
+import { LabelPrintDialog } from "@/components/production/label-print-dialog";
 import { createClient } from "@/lib/supabase/client";
 import {
   claimWorkOrderAction,
@@ -47,19 +48,24 @@ function PieceTally({
   onUpdate:    (lineId: string, pieces: number[]) => void;
 }) {
   const [done, setDone] = React.useState<Set<number>>(() => new Set(initialDone));
-  const [saving, setSaving] = React.useState(false);
+  const pendingRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestRef  = React.useRef<number[]>([...initialDone]);
 
-  async function toggle(piece: number) {
-    if (!canManage || saving) return;
-    const next = new Set(done);
-    if (next.has(piece)) next.delete(piece);
-    else next.add(piece);
-    setDone(next);
-    setSaving(true);
-    const arr = [...next].sort((a, b) => a - b);
-    await updatePieceProgressAction(workOrderId, lineId, arr);
-    onUpdate(lineId, arr);
-    setSaving(false);
+  function toggle(piece: number) {
+    if (!canManage) return;
+    setDone((prev) => {
+      const next = new Set(prev);
+      if (next.has(piece)) next.delete(piece);
+      else next.add(piece);
+      const arr = [...next].sort((a, b) => a - b);
+      latestRef.current = arr;
+      if (pendingRef.current) clearTimeout(pendingRef.current);
+      pendingRef.current = setTimeout(() => {
+        updatePieceProgressAction(workOrderId, lineId, latestRef.current);
+        onUpdate(lineId, latestRef.current);
+      }, 300);
+      return next;
+    });
   }
 
   const pieces = Array.from({ length: quantity }, (_, i) => i + 1);
@@ -72,7 +78,7 @@ function PieceTally({
           <button
             key={p}
             onClick={() => toggle(p)}
-            disabled={!canManage || saving}
+            disabled={!canManage}
             title={`Piece ${p}`}
             style={{
               width: "28px",
@@ -105,19 +111,23 @@ function PieceTally({
     return Array.from({ length: end - start + 1 }, (_, i) => start + i).every((p) => done.has(p));
   }
 
-  async function toggleBatch(start: number, end: number) {
-    if (!canManage || saving) return;
+  function toggleBatch(start: number, end: number) {
+    if (!canManage) return;
     const batch = Array.from({ length: end - start + 1 }, (_, i) => start + i);
-    const allDone = batch.every((p) => done.has(p));
-    const next = new Set(done);
-    if (allDone) batch.forEach((p) => next.delete(p));
-    else batch.forEach((p) => next.add(p));
-    setDone(next);
-    setSaving(true);
-    const arr = [...next].sort((a, b) => a - b);
-    await updatePieceProgressAction(workOrderId, lineId, arr);
-    onUpdate(lineId, arr);
-    setSaving(false);
+    setDone((prev) => {
+      const allDone = batch.every((p) => prev.has(p));
+      const next = new Set(prev);
+      if (allDone) batch.forEach((p) => next.delete(p));
+      else batch.forEach((p) => next.add(p));
+      const arr = [...next].sort((a, b) => a - b);
+      latestRef.current = arr;
+      if (pendingRef.current) clearTimeout(pendingRef.current);
+      pendingRef.current = setTimeout(() => {
+        updatePieceProgressAction(workOrderId, lineId, latestRef.current);
+        onUpdate(lineId, latestRef.current);
+      }, 300);
+      return next;
+    });
   }
 
   return (
@@ -128,7 +138,7 @@ function PieceTally({
           <button
             key={start}
             onClick={() => toggleBatch(start, end)}
-            disabled={!canManage || saving}
+            disabled={!canManage}
             title={`Pieces ${start}–${end}`}
             style={{
               padding:    "2px 6px",
@@ -273,6 +283,7 @@ export function ProductionQueue({
   const [fullData, setFullData]     = React.useState<Map<string, WorkOrderFull>>(new Map());
   const [qcModalWoId, setQcModalWoId]     = React.useState<string | null>(null);
   const [recutModalWoId, setRecutModalWoId] = React.useState<string | null>(null);
+  const [labelPrintWoId, setLabelPrintWoId] = React.useState<string | null>(null);
   const [actionError, setActionError]       = React.useState<string | null>(null);
 
   function switchTab(tab: Tab) {
@@ -355,6 +366,7 @@ export function ProductionQueue({
   const qcWo     = qcModalWoId    ? workOrders.find((w) => w.id === qcModalWoId)    : null;
   const recutWo  = recutModalWoId ? workOrders.find((w) => w.id === recutModalWoId) : null;
   const recutFull = recutModalWoId ? getFullWo(recutModalWoId) : null;
+  const labelPrintFull = labelPrintWoId ? getFullWo(labelPrintWoId) : null;
 
   return (
     <div className="flex flex-col h-full">
@@ -375,7 +387,7 @@ export function ProductionQueue({
           <button
             key={tab.key}
             onClick={() => switchTab(tab.key)}
-            className="px-[var(--space-4)] py-[var(--space-3)] text-[var(--text-sm)] border-b-2 transition-colors"
+            className="px-[var(--space-4)] py-[var(--space-3)] text-[var(--text-sm)] border-b-2 transition-colors cursor-pointer"
             style={{
               borderBottomColor: activeTab === tab.key ? "var(--color-brand)" : "transparent",
               color:             activeTab === tab.key ? "var(--color-brand)"  : "var(--color-text-muted)",
@@ -419,8 +431,11 @@ export function ProductionQueue({
               return (
                 <div
                   key={wo.id}
-                  className="rounded-[var(--radius-lg)] border bg-[var(--color-panel)] overflow-hidden"
-                  style={{ borderColor: "var(--color-border-subtle)" }}
+                  className="rounded-[var(--radius-lg)] border overflow-hidden"
+                  style={{
+                    borderColor: wo.isExpedited ? "var(--status-urgent-border)" : "var(--color-border-subtle)",
+                    background:  wo.isExpedited ? "var(--status-urgent-bg)" : "var(--color-panel)",
+                  }}
                 >
                   {/* Row header */}
                   <button
@@ -510,8 +525,17 @@ export function ProductionQueue({
                           </Button>
                         )}
                         {canQC && wo.status === "in_progress" && (
-                          <Button size="sm" onClick={() => setQcModalWoId(wo.id)}>
-                            Finalize Production
+                          <Button
+                            size="sm"
+                            variant={wo.doneCount < wo.totalPieces ? "secondary" : undefined}
+                            onClick={() => {
+                              if (wo.doneCount < wo.totalPieces) {
+                                if (!confirm(`${wo.totalPieces - wo.doneCount} of ${wo.totalPieces} pieces are incomplete. Finalize anyway? The final price may be recalculated.`)) return;
+                              }
+                              setQcModalWoId(wo.id);
+                            }}
+                          >
+                            {wo.doneCount < wo.totalPieces ? "Finalize Incomplete Order" : "Finalize Production"}
                           </Button>
                         )}
                         {canPrint && (wo.status === "pending" || wo.status === "in_progress" || wo.status === "completed" || wo.status === "awaiting_pickup" || wo.status === "released") && (
@@ -526,7 +550,10 @@ export function ProductionQueue({
                             <Button
                               size="sm"
                               variant="secondary"
-                              onClick={() => window.open(`/api/production/${wo.id}/print?type=labels`, "_blank")}
+                              onClick={() => {
+                                if (!fullData.has(wo.id)) handleExpand(wo.id);
+                                setLabelPrintWoId(wo.id);
+                              }}
                             >
                               Print Labels
                             </Button>
@@ -571,6 +598,14 @@ export function ProductionQueue({
         lines={recutFull?.lines ?? []}
         onClose={() => setRecutModalWoId(null)}
         onSubmit={handleRecutSubmit}
+      />
+
+      {/* Label Print Dialog */}
+      <LabelPrintDialog
+        open={labelPrintWoId !== null}
+        onClose={() => setLabelPrintWoId(null)}
+        workOrderId={labelPrintWoId ?? ""}
+        lines={labelPrintFull?.lines ?? []}
       />
     </div>
   );

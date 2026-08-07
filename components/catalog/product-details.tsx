@@ -28,8 +28,8 @@ export function ProductDetails({ product, pricingVisible }: Props) {
     [
       "Cut dimensions",
       [
-        product.patternLengthIn ? `${product.patternLengthIn}″ L` : null,
-        product.requiredRollWidthIn ? `${product.requiredRollWidthIn}″ W` : null,
+        product.patternLengthIn ? `${Math.round(parseFloat(product.patternLengthIn))}″ L` : null,
+        product.requiredRollWidthIn ? `${Math.round(parseFloat(product.requiredRollWidthIn))}″ W` : null,
       ]
         .filter(Boolean)
         .join(" × ") || "—",

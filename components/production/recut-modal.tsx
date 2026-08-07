@@ -74,7 +74,7 @@ export function RecutModal({ open, lines, onClose, onSubmit }: Props) {
             >
               {lines.map((line) => (
                 <option key={line.id} value={line.id}>
-                  {line.skuSnapshot} — {line.materialName ?? "?"} × {line.quantity}
+                  {line.skuSnapshot} — {line.materialName ?? "?"}
                 </option>
               ))}
             </select>

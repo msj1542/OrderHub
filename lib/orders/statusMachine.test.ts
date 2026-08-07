@@ -42,8 +42,7 @@ describe("valid transition chain", () => {
     ["claim",          "accepted",             "in_fulfillment"],
     ["qc",             "in_fulfillment",       "fulfillment_completed"],
     ["invoice_verify", "fulfillment_completed","ready_for_pickup"],
-    ["release",        "ready_for_pickup",     "released"],
-    ["close",          "released",             "closed"],
+    ["release",        "ready_for_pickup",     "closed"],
   ];
 
   chain.forEach(([action, from, to]) => {
@@ -102,20 +101,8 @@ describe("release", () => {
     expect(getTransition("release", "released")).toBeNull();
   });
 
-  it("toStatus is 'released'", () => {
-    expect(getTransition("release", "ready_for_pickup")?.toStatus).toBe("released");
-  });
-});
-
-describe("close", () => {
-  it("only valid from released", () => {
-    expect(getTransition("close", "released")).not.toBeNull();
-    expect(getTransition("close", "ready_for_pickup")).toBeNull();
-    expect(getTransition("close", "closed")).toBeNull();
-  });
-
-  it("toStatus is 'closed'", () => {
-    expect(getTransition("close", "released")?.toStatus).toBe("closed");
+  it("toStatus is 'closed' (release auto-closes)", () => {
+    expect(getTransition("release", "ready_for_pickup")?.toStatus).toBe("closed");
   });
 });
 
@@ -152,8 +139,5 @@ describe("authz actions on transitions", () => {
   });
   it("release requires order:release", () => {
     expect(TRANSITIONS.release.authzAction).toBe("order:release");
-  });
-  it("close requires order:close", () => {
-    expect(TRANSITIONS.close.authzAction).toBe("order:close");
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useActionState } from "react";
+import { useState, useEffect, useActionState } from "react";
 import { Eye } from "lucide-react";
 import { Button }    from "@/components/ui/button";
 import { Input }     from "@/components/ui/input";
@@ -81,6 +81,11 @@ function CompanyEditor({ company, canPreview, enterPreviewAction }: {
   enterPreviewAction: Props["enterPreviewAction"];
 }) {
   const [state, action, pending] = useActionState(saveCompanyAction, {});
+  const [formKey, setFormKey] = useState(0);
+
+  useEffect(() => {
+    if (state.success) setFormKey((k) => k + 1);
+  }, [state.success]);
   const [previewRole, setPreviewRole] = useState<string>(PREVIEW_ROLES[0]);
   const [previewPending, setPreviewPending] = useState(false);
 
@@ -100,7 +105,7 @@ function CompanyEditor({ company, canPreview, enterPreviewAction }: {
           <Alert variant={state.error ? "danger" : "success"} className="mb-4">{state.error ?? state.success}</Alert>
         )}
 
-        <form action={action} style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+        <form key={formKey} action={action} style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
           {company && <input type="hidden" name="id" value={company.id} />}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-4)]">

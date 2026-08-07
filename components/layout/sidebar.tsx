@@ -23,19 +23,20 @@ type NavItem = {
   href:   string;
   icon:   LucideIcon;
   exact?: boolean;
+  badge?: number;
 };
 
-function buildNav(user: AppUser): NavItem[] {
+function buildNav(user: AppUser, badges?: { orders?: number; production?: number }): NavItem[] {
   const items: NavItem[] = [];
 
   items.push({ label: "Dashboard",   href: "/dashboard", icon: LayoutDashboard, exact: true });
 
   if (can(user, "order:create") || can(user, "order:accept")) {
-    items.push({ label: "Orders", href: "/orders", icon: ClipboardList });
+    items.push({ label: "Orders", href: "/orders", icon: ClipboardList, badge: badges?.orders });
   }
 
   if (can(user, "production:view")) {
-    items.push({ label: "Production", href: "/production", icon: Wrench });
+    items.push({ label: "Production", href: "/production", icon: Wrench, badge: badges?.production });
   }
 
   if (can(user, "catalog:view")) {
@@ -63,11 +64,12 @@ interface SidebarProps {
   user: AppUser;
   signOutAction: () => Promise<void>;
   previewBanner?: React.ReactNode;
+  badges?: { orders?: number; production?: number };
 }
 
-export function Sidebar({ user, signOutAction, previewBanner }: SidebarProps) {
+export function Sidebar({ user, signOutAction, previewBanner, badges }: SidebarProps) {
   const pathname = usePathname();
-  const nav      = buildNav(user);
+  const nav      = buildNav(user, badges);
 
   return (
     <aside
@@ -113,7 +115,7 @@ export function Sidebar({ user, signOutAction, previewBanner }: SidebarProps) {
 
       {/* Nav */}
       <nav style={{ flex: 1, overflowY: "auto", padding: "var(--space-3) 0" }}>
-        {nav.map(({ label, href, icon: Icon, exact }) => {
+        {nav.map(({ label, href, icon: Icon, exact, badge }) => {
           const active = exact ? pathname === href : pathname.startsWith(href);
           return (
             <Link
@@ -136,7 +138,26 @@ export function Sidebar({ user, signOutAction, previewBanner }: SidebarProps) {
               className={cn(!active && "hover:bg-[var(--color-sunken)]")}
             >
               <Icon size={16} strokeWidth={active ? 2.5 : 2} />
-              {label}
+              <span style={{ flex: 1 }}>{label}</span>
+              {!!badge && badge > 0 && (
+                <span
+                  style={{
+                    minWidth:     18,
+                    height:       18,
+                    borderRadius: "var(--radius-pill)",
+                    background:   "var(--color-brand)",
+                    color:        "var(--color-brand-fg)",
+                    fontSize:     "var(--text-xs)",
+                    fontWeight:   "var(--weight-semibold)",
+                    display:      "inline-flex",
+                    alignItems:   "center",
+                    justifyContent: "center",
+                    padding:      "0 5px",
+                  }}
+                >
+                  {badge > 99 ? "99+" : badge}
+                </span>
+              )}
             </Link>
           );
         })}

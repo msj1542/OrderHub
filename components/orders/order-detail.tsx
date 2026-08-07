@@ -47,6 +47,21 @@ export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }
         </Alert>
       )}
 
+      {/* Ready for pickup banner (customer-facing) */}
+      {!isInternal && order.status === "ready_for_pickup" && (
+        <Alert variant="success">
+          <strong>Your order is complete and ready for pickup.</strong>
+          {" "}Contact us to arrange collection.
+          {order.invoiceNumber && (
+            <span className="block mt-[var(--space-1)] text-[var(--text-sm)]">
+              Invoice: {order.invoiceUrl
+                ? <a href={order.invoiceUrl} target="_blank" rel="noopener noreferrer" className="underline">{order.invoiceNumber}</a>
+                : order.invoiceNumber}
+            </span>
+          )}
+        </Alert>
+      )}
+
       {/* Actions */}
       <OrderActions
         order={order}
@@ -55,7 +70,7 @@ export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }
         canDeclineCancel={can(user, "order:decline_cancel")}
         canRequestCancel={can(user, "order:request_cancel")}
         canDeleteDraft={can(user, "order:delete_draft")}
-        canClose={can(user, "order:close")}
+        canSubmit={can(user, "order:submit")}
         canRelease={can(user, "order:release")}
         canQC={can(user, "order:qc")}
         canClaim={can(user, "order:claim")}
@@ -79,18 +94,29 @@ export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }
         </div>
         {order.isExpedited && (
           <div>
-            <p className="text-[var(--color-text-muted)] mb-[var(--space-1)]">Requested Date</p>
+            <p className="text-[var(--color-text-muted)] mb-[var(--space-1)]">Requested Expedited Date</p>
             <p>{formatDate(order.requestedDate)}</p>
+            <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] mt-[var(--space-1)]">
+              Not guaranteed until accepted
+            </p>
           </div>
         )}
         <div>
-          <p className="text-[var(--color-text-muted)] mb-[var(--space-1)]">Expected Completion</p>
+          <p className="text-[var(--color-text-muted)] mb-[var(--space-1)]">{isInternal ? "Due Date" : "Expected Completion"}</p>
           <p>{formatDate(order.expectedCompletionDate)}</p>
         </div>
         {isInternal && (
           <div>
             <p className="text-[var(--color-text-muted)] mb-[var(--space-1)]">Company</p>
             <p>{order.companyName}</p>
+          </div>
+        )}
+        {order.invoiceNumber && (
+          <div>
+            <p className="text-[var(--color-text-muted)] mb-[var(--space-1)]">Invoice</p>
+            <p>{order.invoiceUrl
+              ? <a href={order.invoiceUrl} target="_blank" rel="noopener noreferrer" className="text-[var(--color-brand)] underline">{order.invoiceNumber}</a>
+              : order.invoiceNumber}</p>
           </div>
         )}
       </div>
@@ -124,6 +150,7 @@ export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }
                     <td className="px-[var(--space-4)] py-[var(--space-3)]">
                       <div className="flex items-center gap-[var(--space-2)]">
                         {line.isCustom && <Badge variant="warning">Custom</Badge>}
+                        {line.isExpedited && <Badge variant="urgent">Expedited{line.requestedDate ? ` · ${formatDate(line.requestedDate)}` : ""}</Badge>}
                         <span>{label}</span>
                       </div>
                       {line.pricingStatus === "pricing_pending" && (
@@ -210,7 +237,9 @@ export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }
           <p className="text-[var(--text-sm)] text-[var(--color-text-muted)]">No comments yet.</p>
         )}
         <div className="flex flex-col gap-[var(--space-4)] mb-[var(--space-4)]">
-          {order.comments.map((comment) => (
+          {order.comments
+            .filter((c) => isInternal || !c.isInternal)
+            .map((comment) => (
             <div
               key={comment.id}
               className="flex flex-col gap-[var(--space-1)]"

@@ -3,6 +3,7 @@ import { can } from "@/lib/authz/policy";
 import { redirect } from "next/navigation";
 import { listMaterials, listProducts } from "@/lib/catalog/service";
 import { getOrder } from "@/lib/orders/service";
+import { getSettings } from "@/lib/settings/schedule";
 import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
 import { asc } from "drizzle-orm";
@@ -33,6 +34,8 @@ function buildPrefillLines(
         materialId: line.materialId ?? "",
         quantity: line.quantity,
         notes: attrs.notes ?? "",
+        isExpedited: line.isExpedited,
+        requestedDate: line.requestedDate ?? "",
       });
     } else {
       const product = products.find((p) => p.id === line.productId);
@@ -43,6 +46,8 @@ function buildPrefillLines(
         product,
         materialId: line.materialId ?? product.materials[0]?.id ?? "",
         quantity: line.quantity,
+        isExpedited: line.isExpedited,
+        requestedDate: line.requestedDate ?? "",
       });
     }
   });
@@ -61,12 +66,13 @@ export default async function NewOrderPage({
   const supplementalToOrderId = params.supplemental_to;
   const reorderFromOrderId = params.reorder_from;
 
-  const [{ products }, materialsData, allCompanies] = await Promise.all([
+  const [{ products }, materialsData, allCompanies, settings] = await Promise.all([
     listProducts({ includeInactive: false, customerVisibleOnly: !user.role.isInternal }),
     listMaterials(),
     user.role.isInternal
       ? db.select().from(companies).orderBy(asc(companies.name))
       : Promise.resolve([]),
+    getSettings(),
   ]);
 
   let prefillLines: Line[] | undefined;
@@ -90,6 +96,7 @@ export default async function NewOrderPage({
       supplementalToOrderId={supplementalToOrderId}
       prefillLines={reorderFromOrderId ? prefillLines : undefined}
       defaultCompanyId={prefillCompanyId ?? user.companyId ?? undefined}
+      rushFeeConfig={{ mode: settings.rushFeeMode, value: settings.rushFeeValue }}
     />
   );
 }

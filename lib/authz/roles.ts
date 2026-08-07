@@ -3,6 +3,7 @@ export const ROLES = {
   INTERNAL_ADMIN:     "internal_admin",
   ORDER_COORDINATOR:  "order_coordinator",
   FULFILLMENT:        "fulfillment",
+  COORD_FULFILLMENT:  "coord_fulfillment",
   ACCOUNTING:         "accounting",
   EXTERNAL_ADMIN:     "external_admin",
   EXTERNAL_ORDERING:  "external_ordering",
@@ -15,6 +16,7 @@ export const INTERNAL_ROLES = new Set<RoleCode>([
   ROLES.INTERNAL_ADMIN,
   ROLES.ORDER_COORDINATOR,
   ROLES.FULFILLMENT,
+  ROLES.COORD_FULFILLMENT,
   ROLES.ACCOUNTING,
 ]);
 
@@ -28,6 +30,7 @@ export const ROLE_DISPLAY: Record<RoleCode, string> = {
   internal_admin:     "Internal Admin",
   order_coordinator:  "Order Coordinator",
   fulfillment:        "Fulfillment",
+  coord_fulfillment:  "Coordinator + Fulfillment",
   accounting:         "Accounting",
   external_admin:     "Company Admin",
   external_ordering:  "Ordering User",

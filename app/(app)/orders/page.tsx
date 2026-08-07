@@ -24,7 +24,7 @@ export default async function OrdersPage({
   if (
     !canAny(user, [
       "order:create", "order:accept", "order:claim",
-      "order:qc", "order:invoice_verify", "order:release", "order:close",
+      "order:qc", "order:invoice_verify", "order:release",
     ])
   ) {
     redirect("/dashboard");

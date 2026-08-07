@@ -132,7 +132,8 @@ export function OrdersWorkspace({
                   onClick={() => selectOrder(order.id)}
                   className={cn(
                     "flex flex-col gap-[var(--space-1)] px-[var(--space-4)] py-[var(--space-3)] cursor-pointer border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-sunken)] transition-colors",
-                    isSelected && "bg-[var(--color-sunken)] border-l-2 border-l-[var(--color-brand)]"
+                    isSelected && "bg-[var(--color-sunken)] border-l-2 border-l-[var(--color-brand)]",
+                    order.isExpedited && !isSelected && "bg-[var(--status-urgent-bg)]"
                   )}
                 >
                   <div className="flex items-center justify-between gap-[var(--space-3)]">

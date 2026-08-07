@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { can, canAny }          from "./policy";
+import { INTERNAL_ROLES }       from "./roles";
 import type { AppUser }         from "@/lib/db/schema";
 
 // ── Fixtures ──────────────────────────────────────────────────
@@ -8,7 +9,7 @@ function makeUser(
   roleCode: string,
   opts: { isInternal?: boolean; pricingVisible?: boolean; companyId?: string } = {}
 ): AppUser {
-  const isInternal = opts.isInternal ?? roleCode.startsWith("internal");
+  const isInternal = opts.isInternal ?? INTERNAL_ROLES.has(roleCode as any);
   return {
     id:          "00000000-0000-0000-0000-000000000001",
     authUserId:  "00000000-0000-0000-0000-000000000002",

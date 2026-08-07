@@ -18,7 +18,6 @@ export type OrderTransitionAction =
   | "qc"
   | "invoice_verify"
   | "release"
-  | "close"
   | "request_cancel"
   | "cancel"
   | "decline_cancel"
@@ -61,13 +60,8 @@ export const TRANSITIONS: Record<OrderTransitionAction, TransitionRule> = {
   },
   release: {
     fromStatuses: ["ready_for_pickup"],
-    toStatus:     "released",
-    authzAction:  "order:release",
-  },
-  close: {
-    fromStatuses: ["released"],
     toStatus:     "closed",
-    authzAction:  "order:close",
+    authzAction:  "order:release",
   },
   request_cancel: {
     fromStatuses: ["submitted", "accepted"],

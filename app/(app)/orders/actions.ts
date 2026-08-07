@@ -12,7 +12,7 @@ import {
   addComment,
   invoiceVerifyOrder,
   releaseOrder,
-  closeOrder,
+  submitDraft,
 } from "@/lib/orders/service";
 import type { InvoiceVerificationInput } from "@/lib/orders/invoiceVerification";
 
@@ -22,7 +22,7 @@ type Result = { error?: string | null; message?: string };
 
 export async function acceptOrderAction(
   orderId: string,
-  action: "accept" | "claim" | "release" | "close",
+  action: "accept" | "claim" | "release",
   expectedCompletionDate?: string,
 ): Promise<Result> {
   try {
@@ -35,8 +35,6 @@ export async function acceptOrderAction(
       await claimOrder(orderId, user);
     } else if (action === "release") {
       await releaseOrder(orderId, user);
-    } else if (action === "close") {
-      await closeOrder(orderId, user);
     }
 
     revalidatePath("/orders");
@@ -98,6 +96,20 @@ export async function declineCancellationAction(orderId: string, reason?: string
     const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
     assertNotPreview(preview);
     await declineCancellation(orderId, user, reason);
+    revalidatePath("/orders");
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Action failed." };
+  }
+}
+
+// ── Submit draft ──────────────────────────────────────────────
+
+export async function submitDraftAction(orderId: string): Promise<Result> {
+  try {
+    const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
+    assertNotPreview(preview);
+    await submitDraft(orderId, user);
     revalidatePath("/orders");
     return {};
   } catch (err) {

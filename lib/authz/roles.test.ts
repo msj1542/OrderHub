@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import { ROLES, INTERNAL_ROLES, EXTERNAL_ROLES, ROLE_DISPLAY, isInternal, isExternal } from "@/lib/authz/roles";
 
 describe("role sets", () => {
-  it("defines exactly 7 role codes total, split 4 internal / 3 external", () => {
-    expect(Object.keys(ROLES)).toHaveLength(7);
-    expect(INTERNAL_ROLES.size).toBe(4);
+  it("defines exactly 8 role codes total, split 5 internal / 3 external", () => {
+    expect(Object.keys(ROLES)).toHaveLength(8);
+    expect(INTERNAL_ROLES.size).toBe(5);
     expect(EXTERNAL_ROLES.size).toBe(3);
   });
 

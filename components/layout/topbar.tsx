@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
-import { Bell }        from "lucide-react";
+import { Bell, LogOut, Settings } from "lucide-react";
 import Link            from "next/link";
 import type { AppUser } from "@/lib/db/schema";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
+import { can }         from "@/lib/authz/policy";
 
 const ROUTE_TITLES: Record<string, string> = {
   "/dashboard":     "Dashboard",
@@ -33,9 +34,10 @@ function pageTitle(pathname: string): string {
 interface TopbarProps {
   user: AppUser;
   unreadCount?: number;
+  signOutAction: () => Promise<void>;
 }
 
-export function Topbar({ user, unreadCount: initialUnreadCount = 0 }: TopbarProps) {
+export function Topbar({ user, unreadCount: initialUnreadCount = 0, signOutAction }: TopbarProps) {
   const pathname = usePathname();
   const title    = pageTitle(pathname);
 
@@ -131,8 +133,36 @@ export function Topbar({ user, unreadCount: initialUnreadCount = 0 }: TopbarProp
         )}
       </Link>
 
-      {/* User avatar/initials */}
-      <div
+      {/* User avatar/initials with dropdown */}
+      <AvatarMenu user={user} signOutAction={signOutAction} />
+    </header>
+  );
+}
+
+function AvatarMenu({ user, signOutAction }: { user: AppUser; signOutAction: () => Promise<void> }) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    function close(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  const initials = user.name
+    .split(" ")
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase())
+    .join("");
+
+  return (
+    <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
         title={`${user.name} · ${user.role.displayName}`}
         style={{
           width:          32,
@@ -146,16 +176,83 @@ export function Topbar({ user, unreadCount: initialUnreadCount = 0 }: TopbarProp
           fontSize:       "var(--text-xs)",
           fontWeight:     "var(--weight-semibold)",
           userSelect:     "none",
-          cursor:         "default",
-          flexShrink:     0,
+          cursor:         "pointer",
+          border:         "none",
         }}
       >
-        {user.name
-          .split(" ")
-          .slice(0, 2)
-          .map((w) => w[0]?.toUpperCase())
-          .join("")}
-      </div>
-    </header>
+        {initials}
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position:     "absolute",
+            top:          "calc(100% + var(--space-2))",
+            right:        0,
+            minWidth:     200,
+            background:   "var(--color-panel)",
+            border:       "1px solid var(--color-border-default)",
+            borderRadius: "var(--radius-md)",
+            boxShadow:    "var(--shadow-md)",
+            zIndex:       50,
+            overflow:     "hidden",
+          }}
+        >
+          <div style={{ padding: "var(--space-4) var(--space-4) var(--space-3)", borderBottom: "1px solid var(--color-border-subtle)" }}>
+            <div style={{ fontSize: "var(--text-sm)", fontWeight: "var(--weight-medium)", color: "var(--color-text-primary)" }}>
+              {user.name}
+            </div>
+            <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)", marginTop: "var(--space-1)" }}>
+              {user.role.displayName}
+              {user.company ? ` · ${user.company.name}` : ""}
+            </div>
+          </div>
+
+          {can(user, "settings:manage") && (
+            <Link
+              href="/settings/companies"
+              onClick={() => setOpen(false)}
+              style={{
+                display:        "flex",
+                alignItems:     "center",
+                gap:            "var(--space-3)",
+                padding:        "var(--space-3) var(--space-4)",
+                fontSize:       "var(--text-sm)",
+                color:          "var(--color-text-primary)",
+                textDecoration: "none",
+              }}
+              className="hover:bg-[var(--color-sunken)] transition-colors"
+            >
+              <Settings size={14} strokeWidth={2} />
+              Settings
+            </Link>
+          )}
+
+          <form action={signOutAction}>
+            <button
+              type="submit"
+              onClick={() => setOpen(false)}
+              style={{
+                display:     "flex",
+                alignItems:  "center",
+                gap:         "var(--space-3)",
+                width:       "100%",
+                padding:     "var(--space-3) var(--space-4)",
+                fontSize:    "var(--text-sm)",
+                color:       "var(--color-text-primary)",
+                background:  "transparent",
+                border:      "none",
+                cursor:      "pointer",
+                textAlign:   "left",
+              }}
+              className="hover:bg-[var(--color-sunken)] transition-colors"
+            >
+              <LogOut size={14} strokeWidth={2} />
+              Sign out
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
   );
 }

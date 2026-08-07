@@ -12,7 +12,7 @@ import { db } from "@/lib/db";
 import {
   orders, orderLines, orderComments, orderStatusHistory,
   cancellationRequests, auditLog, materials, invoiceVerifications,
-  companies, users, productionWorkOrders, productionLineProgress,
+  companies, users, productionWorkOrders, productionLineProgress, notifications,
   type AppUser, type Order, type OrderFull, type OrderLine,
   type OrderSummary, type OrderStatus,
 } from "@/lib/db/schema";
@@ -222,6 +222,13 @@ export async function getOrder(
     }
   }
 
+  // Load invoice verification for customer-visible invoice info
+  const ivRows = await db
+    .select({ invoiceNumber: invoiceVerifications.invoiceNumber, invoiceUrl: invoiceVerifications.invoiceUrl })
+    .from(invoiceVerifications)
+    .where(eq(invoiceVerifications.orderId, id))
+    .limit(1);
+
   return {
     ...order,
     companyName,
@@ -232,6 +239,8 @@ export async function getOrder(
       ? { ...cancelRows[0].req, requestedByName: cancelRows[0].requestedByName }
       : null,
     workOrder,
+    invoiceNumber: ivRows[0]?.invoiceNumber ?? null,
+    invoiceUrl: ivRows[0]?.invoiceUrl ?? null,
   };
 }
 
@@ -239,21 +248,25 @@ export async function getOrder(
 
 export type OrderLineInput =
   | {
-      isCustom: false;
-      productId:  string;
-      materialId: string;
-      quantity:   number;
+      isCustom:       false;
+      productId:      string;
+      materialId:     string;
+      quantity:       number;
+      isExpedited?:   boolean;
+      requestedDate?: string | null;
     }
   | {
-      isCustom:     true;
-      description:  string;
-      brand:        string;
-      model:        string;
-      modelYear:    string;
-      coverageArea: string;
-      materialId:   string;
-      quantity:     number;
-      notes?:       string;
+      isCustom:       true;
+      description:    string;
+      brand:          string;
+      model:          string;
+      modelYear:      string;
+      coverageArea:   string;
+      materialId:     string;
+      quantity:       number;
+      notes?:         string;
+      isExpedited?:   boolean;
+      requestedDate?: string | null;
     };
 
 export type OrderDraftInput = {
@@ -309,6 +322,8 @@ async function resolveLines(
         lineTotal:      null,
         pricingStatus:  "pricing_pending",
         isCustom:       true,
+        isExpedited:    !!line.isExpedited,
+        requestedDate:  line.requestedDate ?? null,
       });
       continue;
     }
@@ -396,6 +411,8 @@ async function resolveLines(
       lineTotal:     toDecimal(lineTotal),
       pricingStatus: "priced",
       isCustom:      false,
+      isExpedited:   !!line.isExpedited,
+      requestedDate: line.requestedDate ?? null,
     });
   }
 
@@ -414,7 +431,7 @@ export async function saveOrSubmitOrder(
   }
   if (!input.lines.length) throw new Error("Add at least one line item.");
   if (input.isExpedited && !input.requestedDate) {
-    throw new Error("Requested completion date is required for expedited orders.");
+    throw new Error("Each expedited item must have a requested date.");
   }
 
   // Validate supplemental parent — lookup runs under the requester's own scope
@@ -553,7 +570,7 @@ export async function saveOrSubmitOrder(
         orderId,
         event:     "order_submitted_customer",
         title:     `${orderNumber} received`,
-        body:      "Ordering Hub recorded this order. It has not yet been accepted into production.",
+        body:      "Your order has been received and is awaiting review. You'll be notified when it's accepted.",
       });
       await insertNotification(tx, {
         orderId,
@@ -594,8 +611,11 @@ export async function deleteDraft(orderId: string, user: AppUser): Promise<void>
   }
 
   await db.transaction(async (tx) => {
+    // Detach references that lack ON DELETE CASCADE so the delete succeeds
+    await tx.update(auditLog).set({ orderId: null }).where(eq(auditLog.orderId, orderId));
+    await tx.update(notifications).set({ orderId: null }).where(eq(notifications.orderId, orderId));
+
     await tx.delete(orders).where(eq(orders.id, orderId));
-    // Audit log survives (audit_log has no cascade delete on order_id)
     await tx.insert(auditLog).values({
       userId:     user.id,
       companyId:  order.companyId,
@@ -653,6 +673,59 @@ export async function addComment(
       entityId:   orderId,
       action:     isInternal ? "Internal note added" : "Customer-visible comment added",
     });
+  });
+}
+
+// ── Submit draft ──────────────────────────────────────────────
+
+export async function submitDraft(orderId: string, user: AppUser): Promise<Order> {
+  if (!can(user, "order:submit")) throw new Error("Permission denied.");
+
+  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order) throw new Error("Order not found.");
+
+  const rule = assertCanTransition("submit", order.status, "Only draft orders can be submitted.");
+  const now = new Date();
+
+  return await db.transaction(async (tx) => {
+    const [{ seq }] = await tx.execute<{ seq: string }>(
+      sql`SELECT nextval('public.order_number_seq') AS seq`,
+    );
+    const year = now.getFullYear();
+    const orderNumber = `OH-${year}-${String(seq).padStart(5, "0")}`;
+
+    const [updated] = await tx
+      .update(orders)
+      .set({ status: rule.toStatus!, orderNumber, submittedAt: now, updatedAt: now })
+      .where(eq(orders.id, orderId))
+      .returning();
+
+    await tx.insert(orderStatusHistory).values({
+      orderId,
+      previousStatus: order.status,
+      newStatus:      rule.toStatus!,
+      changedBy:      user.id,
+    });
+    await tx.insert(auditLog).values({
+      userId:        user.id,
+      companyId:     order.companyId,
+      orderId,
+      entityType:    "Order",
+      entityId:      orderId,
+      action:        "Order submitted",
+      previousValue: order.status,
+      newValue:      rule.toStatus!,
+    });
+
+    await insertNotification(tx, {
+      companyId: order.companyId,
+      orderId,
+      event:     "order_submitted_customer",
+      title:     `Order ${orderNumber} submitted`,
+      body:      "Your order has been submitted for review.",
+    });
+
+    return updated;
   });
 }
 
@@ -716,7 +789,7 @@ export async function acceptOrder(
       orderId,
       event:     "order_accepted",
       title:     `${order.orderNumber} accepted`,
-      body:      "The order has been reviewed and accepted into the fulfillment queue.",
+      body:      "Your order has been reviewed and accepted. We'll notify you when it's ready for pickup.",
     });
 
     return updated;
@@ -726,7 +799,7 @@ export async function acceptOrder(
       await sendEmail({
         to:      email,
         subject: `${order.orderNumber} accepted`,
-        html:    `<p>Order <strong>${order.orderNumber}</strong> has been reviewed and accepted into the fulfillment queue.</p>`,
+        html:    `<p>Order <strong>${order.orderNumber}</strong> has been reviewed and accepted. We'll notify you when it's ready for pickup.</p>`,
       }).catch(() => {});
     }
     return updated;
@@ -833,6 +906,7 @@ export async function invoiceVerifyOrder(
       orderId,
       userId:            user.id,
       invoiceNumber:      input.invoiceNumber.trim(),
+      invoiceUrl:         input.invoiceUrl.trim() || null,
       invoiceTotal:       input.invoiceTotal !== null ? toDecimal(input.invoiceTotal) : null,
       discrepancyReason:  input.discrepancyReason.trim() || null,
       attested:           true,
@@ -861,7 +935,7 @@ export async function invoiceVerifyOrder(
       orderId,
       event:     "ready_for_pickup",
       title:     `${order.orderNumber} is ready for pickup`,
-      body:      "The order is complete, verified, and ready for release.",
+      body:      "Your order is complete and ready for pickup. Contact us to arrange collection.",
     });
 
     return updated;
@@ -871,7 +945,7 @@ export async function invoiceVerifyOrder(
       await sendEmail({
         to:      email,
         subject: `${order.orderNumber} is ready for pickup`,
-        html:    `<p>Order <strong>${order.orderNumber}</strong> is complete, verified, and ready for release.</p>`,
+        html:    `<p>Order <strong>${order.orderNumber}</strong> is complete and ready for pickup. Contact us to arrange collection.</p>`,
       }).catch(() => {});
     }
     return updated;
@@ -892,7 +966,7 @@ export async function releaseOrder(orderId: string, user: AppUser): Promise<Orde
   return await db.transaction(async (tx) => {
     const [updated] = await tx
       .update(orders)
-      .set({ status: rule.toStatus!, releasedAt: now, updatedAt: now })
+      .set({ status: rule.toStatus!, releasedAt: now, closedAt: now, updatedAt: now })
       .where(eq(orders.id, orderId))
       .returning();
 
@@ -922,44 +996,6 @@ export async function releaseOrder(orderId: string, user: AppUser): Promise<Orde
   });
 }
 
-// ── Close order ─────────────────────────────────────────────
-
-export async function closeOrder(orderId: string, user: AppUser): Promise<Order> {
-  if (!can(user, "order:close")) throw new Error("Permission denied.");
-
-  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-  if (!order) throw new Error("Order not found.");
-
-  const rule = assertCanTransition("close", order.status, "This order cannot be closed.");
-  const now = new Date();
-
-  return await db.transaction(async (tx) => {
-    const [updated] = await tx
-      .update(orders)
-      .set({ status: rule.toStatus!, closedAt: now, updatedAt: now })
-      .where(eq(orders.id, orderId))
-      .returning();
-
-    await tx.insert(orderStatusHistory).values({
-      orderId,
-      previousStatus: order.status,
-      newStatus:      rule.toStatus!,
-      changedBy:      user.id,
-    });
-    await tx.insert(auditLog).values({
-      userId:        user.id,
-      companyId:     order.companyId,
-      orderId,
-      entityType:    "Order",
-      entityId:      orderId,
-      action:        "Status changed",
-      previousValue: order.status,
-      newValue:      rule.toStatus!,
-    });
-
-    return updated;
-  });
-}
 
 // ── Request cancellation (external) ───────────────────────────
 
@@ -1112,32 +1148,167 @@ export type DashboardCounts = {
   cancellationCount:     number;
   draftCount:            number;
   pendingWorkOrderCount: number;
+  dueThisWeekCount:      number;
+  overdueCount:          number;
+};
+
+export type DashboardAction = {
+  key:         string;
+  label:       string;
+  detail:      string;
+  orderId:     string;
+  orderNumber: string | null;
+  companyName: string;
+  isExpedited: boolean;
+  dueDate:     string | null;
+  target:      "orders" | "production";
 };
 
 export async function getDashboardCounts(user: AppUser): Promise<DashboardCounts> {
   if (user.role.isInternal) {
-    const [submitted]    = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(eq(orders.status, "submitted"));
-    const [expedited]    = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(eq(orders.isExpedited, true), inArray(orders.status as any, ["submitted", "accepted", "in_fulfillment"])));
-    const [cancellation] = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(eq(orders.cancellationRequested, true));
-    const [pendingWO]    = await db.select({ n: sql<number>`count(*)::int` }).from(productionWorkOrders).where(eq(productionWorkOrders.status, "pending"));
+    const nowISO = new Date().toISOString().slice(0, 10);
+    const weekFromNow = new Date(Date.now() + 7 * 86400_000).toISOString().slice(0, 10);
+
+    const [submitted, expedited, cancellation, pendingWO, dueThisWeek, overdue] = await Promise.all([
+      db.select({ n: sql<number>`count(*)::int` }).from(orders).where(eq(orders.status, "submitted")),
+      db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(eq(orders.isExpedited, true), inArray(orders.status as any, ["submitted", "accepted", "in_fulfillment"]))),
+      db.select({ n: sql<number>`count(*)::int` }).from(orders).where(eq(orders.cancellationRequested, true)),
+      db.select({ n: sql<number>`count(*)::int` }).from(productionWorkOrders).where(eq(productionWorkOrders.status, "pending")),
+      db.select({ n: sql<number>`count(*)::int` }).from(orders).where(
+        and(
+          inArray(orders.status as any, ["submitted", "accepted", "in_fulfillment", "fulfillment_completed"]),
+          gte(orders.expectedCompletionDate, nowISO),
+          sql`${orders.expectedCompletionDate} <= ${weekFromNow}`,
+        ),
+      ),
+      db.select({ n: sql<number>`count(*)::int` }).from(orders).where(
+        and(
+          inArray(orders.status as any, ["submitted", "accepted", "in_fulfillment", "fulfillment_completed"]),
+          sql`${orders.expectedCompletionDate} < ${nowISO}`,
+        ),
+      ),
+    ]);
     return {
-      submittedCount:        submitted.n,
-      expeditedCount:        expedited.n,
-      cancellationCount:     cancellation.n,
+      submittedCount:        submitted[0].n,
+      expeditedCount:        expedited[0].n,
+      cancellationCount:     cancellation[0].n,
       draftCount:            0,
-      pendingWorkOrderCount: pendingWO.n,
+      pendingWorkOrderCount: pendingWO[0].n,
+      dueThisWeekCount:      dueThisWeek[0].n,
+      overdueCount:          overdue[0].n,
     };
   } else {
     const scope = orderScopeCondition(user);
     const conds = scope ? [scope] : [];
     const [drafts] = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(...conds, eq(orders.status, "draft")));
     const submitted = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(...conds, or(eq(orders.status, "submitted"), eq(orders.status, "accepted"))));
+    const [accepted] = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(...conds, eq(orders.status, "accepted")));
+    const [ready]    = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(...conds, eq(orders.status, "ready_for_pickup")));
     return {
       submittedCount:        submitted[0].n,
-      expeditedCount:        0,
-      cancellationCount:     0,
+      expeditedCount:        accepted.n,
+      cancellationCount:     ready.n,
       draftCount:            drafts.n,
       pendingWorkOrderCount: 0,
+      dueThisWeekCount:      0,
+      overdueCount:          0,
     };
   }
+}
+
+export async function getDashboardActions(user: AppUser): Promise<DashboardAction[]> {
+  if (!user.role.isInternal) return [];
+
+  const creator = alias(users, "creator");
+  const company = alias(companies, "co");
+
+  const actions: DashboardAction[] = [];
+
+  if (can(user, "order:accept")) {
+    const submitted = await db
+      .select({
+        id: orders.id,
+        orderNumber: orders.orderNumber,
+        companyName: company.name,
+        isExpedited: orders.isExpedited,
+        expectedCompletionDate: orders.expectedCompletionDate,
+        cancellationRequested: orders.cancellationRequested,
+        status: orders.status,
+      })
+      .from(orders)
+      .innerJoin(company, eq(orders.companyId, company.id))
+      .where(
+        or(
+          eq(orders.status, "submitted"),
+          and(eq(orders.status, "fulfillment_completed"), eq(orders.cancellationRequested, false)),
+          eq(orders.cancellationRequested, true),
+        ),
+      )
+      .orderBy(desc(orders.isExpedited), asc(orders.createdAt))
+      .limit(10);
+
+    for (const o of submitted) {
+      if (o.cancellationRequested) {
+        actions.push({ key: `cancel-${o.id}`, label: "Cancellation request needs review", detail: "Customer decision required", orderId: o.id, orderNumber: o.orderNumber, companyName: o.companyName, isExpedited: o.isExpedited, dueDate: o.expectedCompletionDate, target: "orders" });
+      } else if (o.status === "submitted") {
+        actions.push({ key: `review-${o.id}`, label: "New order needs review and acceptance", detail: "Customer order awaiting acknowledgment", orderId: o.id, orderNumber: o.orderNumber, companyName: o.companyName, isExpedited: o.isExpedited, dueDate: o.expectedCompletionDate, target: "orders" });
+      } else if (o.status === "fulfillment_completed") {
+        actions.push({ key: `invoice-${o.id}`, label: "Invoice verification required", detail: "Production is complete", orderId: o.id, orderNumber: o.orderNumber, companyName: o.companyName, isExpedited: o.isExpedited, dueDate: o.expectedCompletionDate, target: "orders" });
+      }
+    }
+  }
+
+  if (can(user, "production:manage")) {
+    const pendingWOs = await db
+      .select({
+        woId: productionWorkOrders.id,
+        woStatus: productionWorkOrders.status,
+        orderId: productionWorkOrders.orderId,
+        orderNumber: orders.orderNumber,
+        companyName: company.name,
+        isExpedited: orders.isExpedited,
+        dueDate: productionWorkOrders.dueDate,
+      })
+      .from(productionWorkOrders)
+      .innerJoin(orders, eq(productionWorkOrders.orderId, orders.id))
+      .innerJoin(company, eq(orders.companyId, company.id))
+      .where(inArray(productionWorkOrders.status, ["pending", "in_progress"]))
+      .orderBy(desc(orders.isExpedited), asc(productionWorkOrders.createdAt))
+      .limit(10);
+
+    for (const wo of pendingWOs) {
+      actions.push({
+        key: `production-${wo.woId}`,
+        label: wo.woStatus === "pending" ? "New work order ready to begin" : "Production work needs attention",
+        detail: wo.woStatus === "pending" ? "New work order" : "Work in progress",
+        orderId: wo.orderId,
+        orderNumber: wo.orderNumber,
+        companyName: wo.companyName,
+        isExpedited: wo.isExpedited,
+        dueDate: wo.dueDate,
+        target: "production",
+      });
+    }
+  }
+
+  return actions.slice(0, 7);
+}
+
+export async function getSidebarBadges(user: AppUser): Promise<{ orders: number; production: number }> {
+  if (user.role.isInternal) {
+    const [[submitted], [needsAction], [pendingWO]] = await Promise.all([
+      db.select({ n: sql<number>`count(*)::int` }).from(orders).where(eq(orders.status, "submitted")),
+      db.select({ n: sql<number>`count(*)::int` }).from(orders).where(eq(orders.status, "fulfillment_completed")),
+      db.select({ n: sql<number>`count(*)::int` }).from(productionWorkOrders).where(eq(productionWorkOrders.status, "pending")),
+    ]);
+    return { orders: submitted.n + needsAction.n, production: pendingWO.n };
+  }
+  // External users: count their own orders that are in active states
+  const scope = orderScopeCondition(user);
+  const conditions = [
+    inArray(orders.status, ["submitted", "accepted", "in_fulfillment"]),
+  ];
+  if (scope) conditions.push(scope);
+  const [active] = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(...conditions));
+  return { orders: active.n, production: 0 };
 }

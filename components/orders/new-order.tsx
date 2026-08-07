@@ -18,24 +18,28 @@ import { Plus, Trash2, Search } from "lucide-react";
 // ── Types ──────────────────────────────────────────────────────
 
 export type CatalogLine = {
-  id:         string; // local key
-  type:       "catalog";
-  product:    ProductWithMaterials;
-  materialId: string;
-  quantity:   number;
+  id:            string; // local key
+  type:          "catalog";
+  product:       ProductWithMaterials;
+  materialId:    string;
+  quantity:      number;
+  isExpedited:   boolean;
+  requestedDate: string;
 };
 
 export type CustomLine = {
-  id:          string;
-  type:        "custom";
-  description: string;
-  brand:       string;
-  model:       string;
-  modelYear:   string;
-  coverageArea: string;
-  materialId:  string;
-  quantity:    number;
-  notes:       string;
+  id:            string;
+  type:          "custom";
+  description:   string;
+  brand:         string;
+  model:         string;
+  modelYear:     string;
+  coverageArea:  string;
+  materialId:    string;
+  quantity:      number;
+  notes:         string;
+  isExpedited:   boolean;
+  requestedDate: string;
 };
 
 export type Line = CatalogLine | CustomLine;
@@ -50,6 +54,7 @@ type Props = {
   prefillCompanyId?: string;
   supplementalToOrderId?: string;
   defaultCompanyId?: string;  // for external users
+  rushFeeConfig?: { mode: string; value: number };
 };
 
 // ── Line subtotal ──────────────────────────────────────────────
@@ -73,20 +78,20 @@ export function NewOrder({
   prefillLines,
   supplementalToOrderId,
   defaultCompanyId,
+  rushFeeConfig,
 }: Props) {
   const router = useRouter();
 
   // Form state
   const [companyId, setCompanyId]       = React.useState(defaultCompanyId ?? companies[0]?.id ?? "");
   const [poNumber, setPoNumber]         = React.useState("");
-  const [isExpedited, setIsExpedited]   = React.useState(false);
-  const [requestedDate, setRequestedDate] = React.useState("");
   const [customerNotes, setCustomerNotes] = React.useState("");
   const [internalNotes, setInternalNotes] = React.useState("");
   const [lines, setLines]               = React.useState<Line[]>(prefillLines ?? []);
   const [error, setError]               = React.useState<string | null>(null);
   const [dupWarning, setDupWarning]     = React.useState<{ orderId: string; orderNumber: string | null } | null>(null);
   const [pending, setPending]           = React.useState<"draft" | "submit" | null>(null);
+  const [rushFeeConfirm, setRushFeeConfirm] = React.useState(false);
 
   // Catalog search state
   const [catalogSearch, setCatalogSearch] = React.useState("");
@@ -119,11 +124,13 @@ export function NewOrder({
     setLines((prev) => [
       ...prev,
       {
-        id:         nextId(),
-        type:       "catalog",
+        id:            nextId(),
+        type:          "catalog",
         product,
-        materialId: defaultMat.id,
-        quantity:   1,
+        materialId:    defaultMat.id,
+        quantity:      1,
+        isExpedited:   false,
+        requestedDate: "",
       },
     ]);
     setShowSearch(false);
@@ -136,7 +143,7 @@ export function NewOrder({
     }
     setLines((prev) => [
       ...prev,
-      { ...customForm, id: nextId(), type: "custom" },
+      { ...customForm, id: nextId(), type: "custom", isExpedited: false, requestedDate: "" },
     ]);
     setCustomForm({ description: "", brand: "", model: "", modelYear: "", coverageArea: "", materialId: "", quantity: 1, notes: "" });
     setShowCustomForm(false);
@@ -158,14 +165,24 @@ export function NewOrder({
     return sum + price * line.quantity;
   }, 0);
 
+  const isExpedited = lines.some((l) => l.isExpedited);
+  const requestedDate = lines.reduce((earliest, l) => {
+    if (!l.isExpedited || !l.requestedDate) return earliest;
+    return !earliest || l.requestedDate < earliest ? l.requestedDate : earliest;
+  }, "" as string);
+
+  const rushFee = React.useMemo(() => {
+    if (!isExpedited || !rushFeeConfig || rushFeeConfig.mode === "disabled") return 0;
+    if (rushFeeConfig.mode === "flat") return rushFeeConfig.value;
+    return Math.round(subtotal * (rushFeeConfig.value / 100) * 100) / 100;
+  }, [isExpedited, rushFeeConfig, subtotal]);
+
   // ── Submit helpers ───────────────────────────────────────────
 
   function buildFormData(mode: "draft" | "submit", confirmDuplicate = false): FormData {
     const fd = new FormData();
     fd.set("companyId",   companyId);
     fd.set("poNumber",    poNumber);
-    fd.set("isExpedited", isExpedited ? "true" : "false");
-    fd.set("requestedDate", requestedDate);
     fd.set("customerNotes", customerNotes);
     if (isInternal) fd.set("internalNotes", internalNotes);
     if (supplementalToOrderId) fd.set("supplementalToOrderId", supplementalToOrderId);
@@ -173,17 +190,23 @@ export function NewOrder({
     fd.set("lines", JSON.stringify(
       lines.map((l) =>
         l.type === "catalog"
-          ? { isCustom: false, productId: l.product.id, materialId: l.materialId, quantity: l.quantity }
-          : { isCustom: true, description: l.description, brand: l.brand, model: l.model, modelYear: l.modelYear, coverageArea: l.coverageArea, materialId: l.materialId, quantity: l.quantity, notes: l.notes },
+          ? { isCustom: false, productId: l.product.id, materialId: l.materialId, quantity: l.quantity, isExpedited: l.isExpedited, requestedDate: l.requestedDate || null }
+          : { isCustom: true, description: l.description, brand: l.brand, model: l.model, modelYear: l.modelYear, coverageArea: l.coverageArea, materialId: l.materialId, quantity: l.quantity, notes: l.notes, isExpedited: l.isExpedited, requestedDate: l.requestedDate || null },
       ),
     ));
     return fd;
   }
 
-  async function handleSubmit(mode: "draft" | "submit", confirmDuplicate = false) {
+  async function handleSubmit(mode: "draft" | "submit", confirmDuplicate = false, bypassRushFee = false) {
     if (!companyId) { setError("Select a company."); return; }
     if (lines.length === 0) { setError("Add at least one item."); return; }
-    if (isExpedited && !requestedDate) { setError("Select a requested completion date for expedited orders."); return; }
+    const missingDate = lines.some((l) => l.isExpedited && !l.requestedDate);
+    if (missingDate) { setError("Each expedited item must have a requested date."); return; }
+
+    if (mode === "submit" && isExpedited && rushFee > 0 && !bypassRushFee) {
+      setRushFeeConfirm(true);
+      return;
+    }
 
     setPending(mode);
     setError(null);
@@ -244,6 +267,23 @@ export function NewOrder({
         </Alert>
       )}
 
+      {rushFeeConfirm && (
+        <Alert variant="warning">
+          <p className="mb-[var(--space-3)]">
+            This expedited order includes a rush fee of <strong>{formatMoney(rushFee)}</strong>.
+            The grand total will be <strong>{formatMoney(subtotal + rushFee)}</strong>. Continue?
+          </p>
+          <div className="flex gap-[var(--space-3)]">
+            <Button size="sm" onClick={() => { setRushFeeConfirm(false); handleSubmit("submit", false, true); }} disabled={!!pending}>
+              Confirm &amp; Submit
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setRushFeeConfirm(false)}>
+              Go Back
+            </Button>
+          </div>
+        </Alert>
+      )}
+
       {/* Company selector (internal only) */}
       {isInternal && !supplementalToOrderId && (
         <div className="flex flex-col gap-[var(--space-2)]">
@@ -262,29 +302,9 @@ export function NewOrder({
       )}
 
       {/* Order details */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-4)]">
-        <div className="flex flex-col gap-[var(--space-2)]">
-          <Label htmlFor="poNumber">PO Number</Label>
-          <Input id="poNumber" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} placeholder="Optional" />
-        </div>
-        <div className="flex flex-col gap-[var(--space-2)]">
-          <div className="flex items-center gap-[var(--space-2)]">
-            <Checkbox
-              id="isExpedited"
-              checked={isExpedited}
-              onCheckedChange={(v) => { setIsExpedited(!!v); if (!v) setRequestedDate(""); }}
-            />
-            <Label htmlFor="isExpedited" className="cursor-pointer">Expedited Order</Label>
-          </div>
-          {isExpedited && (
-            <Input
-              type="date"
-              value={requestedDate}
-              onChange={(e) => setRequestedDate(e.target.value)}
-              placeholder="Requested completion date"
-            />
-          )}
-        </div>
+      <div className="flex flex-col gap-[var(--space-2)]" style={{ maxWidth: "280px" }}>
+        <Label htmlFor="poNumber">PO Number</Label>
+        <Input id="poNumber" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} placeholder="Optional" />
       </div>
 
       {/* Line items */}
@@ -358,6 +378,30 @@ export function NewOrder({
                     ) : null;
                   })()}
                 </div>
+                <div className="flex flex-wrap items-center gap-[var(--space-3)]">
+                  <div className="flex items-center gap-[var(--space-2)]">
+                    <Checkbox
+                      id={`exp-${line.id}`}
+                      checked={line.isExpedited}
+                      onCheckedChange={(v) => updateLine(line.id, { isExpedited: !!v, requestedDate: v ? line.requestedDate : "" })}
+                    />
+                    <Label htmlFor={`exp-${line.id}`} className="cursor-pointer text-[var(--text-xs)]">Expedited</Label>
+                  </div>
+                  {line.isExpedited && (
+                    <div className="flex flex-col gap-[var(--space-1)]">
+                      <Label className="text-[var(--text-xs)]">Requested Date</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-[var(--text-sm)] w-40"
+                        value={line.requestedDate}
+                        onChange={(e) => updateLine(line.id, { requestedDate: e.target.value })}
+                      />
+                      <p className="text-[var(--text-xs)] text-[var(--color-text-muted)]">
+                        This is a requested date, not a guarantee. Confirmation will be provided upon acceptance.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <>
@@ -388,6 +432,30 @@ export function NewOrder({
                     <Input type="number" min={1} className="h-8 text-[var(--text-sm)]" value={line.quantity} onChange={(e) => updateLine(line.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })} />
                   </div>
                 </div>
+                <div className="flex flex-wrap items-center gap-[var(--space-3)]">
+                  <div className="flex items-center gap-[var(--space-2)]">
+                    <Checkbox
+                      id={`exp-${line.id}`}
+                      checked={line.isExpedited}
+                      onCheckedChange={(v) => updateLine(line.id, { isExpedited: !!v, requestedDate: v ? line.requestedDate : "" })}
+                    />
+                    <Label htmlFor={`exp-${line.id}`} className="cursor-pointer text-[var(--text-xs)]">Expedited</Label>
+                  </div>
+                  {line.isExpedited && (
+                    <div className="flex flex-col gap-[var(--space-1)]">
+                      <Label className="text-[var(--text-xs)]">Requested Date</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-[var(--text-sm)] w-40"
+                        value={line.requestedDate}
+                        onChange={(e) => updateLine(line.id, { requestedDate: e.target.value })}
+                      />
+                      <p className="text-[var(--text-xs)] text-[var(--color-text-muted)]">
+                        This is a requested date, not a guarantee. Confirmation will be provided upon acceptance.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -409,8 +477,7 @@ export function NewOrder({
                 Cancel
               </button>
             </div>
-            {catalogSearch.length >= 1 && (
-              <div className="max-h-60 overflow-auto flex flex-col divide-y divide-[var(--color-border-subtle)]">
+            <div className="max-h-60 overflow-auto flex flex-col divide-y divide-[var(--color-border-subtle)]">
                 {visibleProducts.slice(0, 30).map((p) => (
                   <button
                     key={p.id}
@@ -426,7 +493,6 @@ export function NewOrder({
                   <p className="text-[var(--text-sm)] text-[var(--color-text-muted)] py-[var(--space-3)] px-[var(--space-2)]">No products found.</p>
                 )}
               </div>
-            )}
           </div>
         )}
 
@@ -503,10 +569,16 @@ export function NewOrder({
               <span className="text-[var(--color-text-muted)]">Subtotal</span>
               <span>{formatMoney(subtotal)}</span>
             </div>
-            {isExpedited && (
+            {isExpedited && rushFee > 0 && (
               <div className="flex justify-between gap-[var(--space-10)]">
                 <span className="text-[var(--color-text-muted)]">Rush Fee</span>
-                <span className="text-[var(--status-urgent-text)]">Calculated on submit</span>
+                <span className="text-[var(--status-urgent-text)]">{formatMoney(rushFee)}</span>
+              </div>
+            )}
+            {isExpedited && rushFee > 0 && (
+              <div className="flex justify-between gap-[var(--space-10)] border-t border-[var(--color-border-default)] pt-[var(--space-2)] font-[var(--weight-semibold)]">
+                <span>Grand Total</span>
+                <span>{formatMoney(subtotal + rushFee)}</span>
               </div>
             )}
           </div>

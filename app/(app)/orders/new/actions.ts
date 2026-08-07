@@ -20,13 +20,17 @@ async function handleOrderAction(
 
     const companyId             = formData.get("companyId") as string;
     const poNumber              = (formData.get("poNumber") as string) || "";
-    const isExpedited           = formData.get("isExpedited") === "true";
-    const requestedDate         = (formData.get("requestedDate") as string) || undefined;
     const customerNotes         = (formData.get("customerNotes") as string) || "";
     const internalNotes         = (formData.get("internalNotes") as string) || "";
     const supplementalToOrderId = (formData.get("supplementalToOrderId") as string) || undefined;
     const linesJson             = formData.get("lines") as string;
     const lines                 = JSON.parse(linesJson) as OrderLineInput[];
+
+    const isExpedited   = lines.some((l) => l.isExpedited);
+    const requestedDate = lines.reduce((earliest: string | undefined, l) => {
+      if (!l.isExpedited || !l.requestedDate) return earliest;
+      return !earliest || l.requestedDate < earliest ? l.requestedDate : earliest;
+    }, undefined);
 
     const targetCompanyId = user.role.isInternal ? companyId : user.companyId!;
 

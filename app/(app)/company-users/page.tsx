@@ -20,7 +20,7 @@ export default async function CompanyUsersPage() {
     <UserManager
       users={users}
       currentUserId={user.id}
-      roleOptions={[ROLES.EXTERNAL_ORDERING, ROLES.EXTERNAL_REFERENCE]}
+      roleOptions={[ROLES.EXTERNAL_ADMIN, ROLES.EXTERNAL_ORDERING, ROLES.EXTERNAL_REFERENCE]}
       canChangeRole={false}
       inviteAction={inviteCompanyUserAction}
       updateAction={updateCompanyUserAction}

@@ -4,6 +4,8 @@ import { Sidebar }       from "@/components/layout/sidebar";
 import { Topbar }        from "@/components/layout/topbar";
 import { PreviewBanner } from "@/components/layout/preview-banner";
 import { getUnreadCount } from "@/lib/notifications/service";
+import { getSidebarBadges } from "@/lib/orders/service";
+import { isInternal as isInternalRole } from "@/lib/authz/roles";
 
 export default async function AppLayout({
   children,
@@ -11,7 +13,7 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
-  const unreadCount = await getUnreadCount(user);
+  const [unreadCount, sidebarBadges] = await Promise.all([getUnreadCount(user), getSidebarBadges(user)]);
 
   // Preview mode: render the sidebar with the preview user's role so nav
   // reflects what the previewed user would see, but the actual user record
@@ -23,8 +25,7 @@ export default async function AppLayout({
         companyId: preview.companyId,
         role: {
           ...user.role,
-          // Keep isInternal accurate — external preview roles are not internal.
-          isInternal: preview.roleCode.startsWith("internal"),
+          isInternal: isInternalRole(preview.roleCode),
           roleCode:    preview.roleCode,
           displayName: preview.roleCode,
         },
@@ -40,6 +41,7 @@ export default async function AppLayout({
       <Sidebar
         user={sidebarUser as typeof user}
         signOutAction={signOutAction}
+        badges={sidebarBadges}
         previewBanner={
           preview ? (
             <PreviewBanner preview={preview} exitAction={exitPreviewAction} />
@@ -57,7 +59,7 @@ export default async function AppLayout({
           minWidth:      0,
         }}
       >
-        <Topbar user={user} unreadCount={unreadCount} />
+        <Topbar user={user} unreadCount={unreadCount} signOutAction={signOutAction} />
 
         <main
           style={{

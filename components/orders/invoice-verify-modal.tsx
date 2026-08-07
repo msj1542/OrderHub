@@ -22,6 +22,7 @@ type Props = {
   onClose: () => void;
   onSubmit: (input: {
     invoiceNumber: string;
+    invoiceUrl: string;
     invoiceTotal: number | null;
     discrepancyReason: string;
     attested: boolean;
@@ -32,6 +33,7 @@ export function InvoiceVerifyModal({ open, order, onClose, onSubmit }: Props) {
   const grandTotal = parseFloat(order.grandTotal);
 
   const [invoiceNumber, setInvoiceNumber]         = React.useState("");
+  const [invoiceUrl, setInvoiceUrl]               = React.useState("");
   const [invoiceTotalStr, setInvoiceTotalStr]     = React.useState(order.grandTotal);
   const [discrepancyReason, setDiscrepancyReason] = React.useState("");
   const [attested, setAttested]                   = React.useState(false);
@@ -44,6 +46,7 @@ export function InvoiceVerifyModal({ open, order, onClose, onSubmit }: Props) {
 
   function reset() {
     setInvoiceNumber("");
+    setInvoiceUrl("");
     setInvoiceTotalStr(order.grandTotal);
     setDiscrepancyReason("");
     setAttested(false);
@@ -57,6 +60,7 @@ export function InvoiceVerifyModal({ open, order, onClose, onSubmit }: Props) {
     try {
       await onSubmit({
         invoiceNumber,
+        invoiceUrl,
         invoiceTotal: Number.isFinite(invoiceTotal as number) ? invoiceTotal : null,
         discrepancyReason,
         attested,
@@ -132,6 +136,17 @@ export function InvoiceVerifyModal({ open, order, onClose, onSubmit }: Props) {
                 onChange={(e) => setInvoiceTotalStr(e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-[var(--space-2)]">
+            <Label htmlFor="invoiceUrl">Invoice URL <span className="text-[var(--color-text-muted)] font-normal">(optional)</span></Label>
+            <Input
+              id="invoiceUrl"
+              type="url"
+              value={invoiceUrl}
+              onChange={(e) => setInvoiceUrl(e.target.value)}
+              placeholder="https://…"
+            />
           </div>
 
           {discrepant && (

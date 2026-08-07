@@ -14,13 +14,14 @@ import {
   requestCancellationAction,
   declineCancellationAction,
   deleteDraftAction,
+  submitDraftAction,
   invoiceVerifyAction,
 } from "@/app/(app)/orders/actions";
 import type { OrderFull } from "@/lib/db/schema";
 
 const NOT_REORDERABLE: string[] = ["draft", "canceled"];
 const SUPPLEMENTAL_ELIGIBLE: string[] = [
-  "accepted", "in_fulfillment", "fulfillment_completed", "ready_for_pickup", "released",
+  "accepted", "in_fulfillment", "fulfillment_completed",
 ];
 
 type Props = {
@@ -30,7 +31,7 @@ type Props = {
   canDeclineCancel: boolean;
   canRequestCancel: boolean;
   canDeleteDraft: boolean;
-  canClose:     boolean;
+  canSubmit:    boolean;
   canRelease:   boolean;
   canQC:        boolean;
   canClaim:     boolean;
@@ -46,7 +47,7 @@ export function OrderActions({
   canDeclineCancel,
   canRequestCancel,
   canDeleteDraft,
-  canClose,
+  canSubmit,
   canRelease,
   canQC,
   canClaim,
@@ -112,11 +113,6 @@ export function OrderActions({
         <Button size="sm" onClick={() => setDialog("release")}>Release Order</Button>
       )}
 
-      {/* Close */}
-      {canClose && status === "released" && (
-        <Button size="sm" onClick={() => setDialog("close")}>Close Order</Button>
-      )}
-
       {/* Cancel order (internal) */}
       {canCancel && (status === "submitted" || status === "accepted") && (
         <Button size="sm" variant="danger" onClick={() => setDialog("cancel")}>Cancel Order</Button>
@@ -136,6 +132,13 @@ export function OrderActions({
         </Button>
       )}
 
+      {/* Submit draft */}
+      {canSubmit && status === "draft" && (
+        <Button size="sm" onClick={() => run(() => submitDraftAction(order.id))}>
+          Submit Order
+        </Button>
+      )}
+
       {/* Delete draft */}
       {canDeleteDraft && status === "draft" && (
         <Button size="sm" variant="danger" onClick={() => setDialog("delete_draft")}>
@@ -143,8 +146,8 @@ export function OrderActions({
         </Button>
       )}
 
-      {/* Reorder */}
-      {canCreate && !NOT_REORDERABLE.includes(status) && (
+      {/* Reorder — external users only see this after accepted */}
+      {canCreate && !NOT_REORDERABLE.includes(status) && (isInternal || !["submitted"].includes(status)) && (
         <Button size="sm" variant="secondary" onClick={() => router.push(`/orders/new?reorder_from=${order.id}`)}>
           Reorder
         </Button>
@@ -180,6 +183,18 @@ export function OrderActions({
         onConfirm={() => run(() => acceptOrderAction(order.id, "accept", expectedDate))}
       >
         <div className="flex flex-col gap-[var(--space-3)]">
+          {order.isExpedited && (
+            <div className="rounded-[var(--radius-md)] bg-[var(--status-urgent-bg)] border border-[var(--status-urgent-border)] px-[var(--space-4)] py-[var(--space-3)]">
+              <p className="text-[var(--text-sm)] font-[var(--weight-medium)] text-[var(--status-urgent-text)]">
+                Expedited Order
+              </p>
+              {order.requestedDate && (
+                <p className="text-[var(--text-sm)] text-[var(--status-urgent-text)] mt-[var(--space-1)]">
+                  Requested date: {new Date(order.requestedDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                </p>
+              )}
+            </div>
+          )}
           <Label htmlFor="expectedDate">Expected Completion Date</Label>
           <Input
             id="expectedDate"
@@ -239,20 +254,10 @@ export function OrderActions({
         open={dialog === "release"}
         onOpenChange={(open) => { if (!open) setDialog(null); }}
         title="Release Order"
-        description="Release this order to the customer."
+        description="Release this order to the customer and close it."
         confirmLabel="Release"
         variant="primary"
         onConfirm={() => run(() => acceptOrderAction(order.id, "release"))}
-      />
-
-      <ConfirmDialog
-        open={dialog === "close"}
-        onOpenChange={(open) => { if (!open) setDialog(null); }}
-        title="Close Order"
-        description="Mark this order as invoiced and closed."
-        confirmLabel="Close"
-        variant="primary"
-        onConfirm={() => run(() => acceptOrderAction(order.id, "close"))}
       />
 
       <ConfirmDialog

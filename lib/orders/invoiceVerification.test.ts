@@ -18,7 +18,7 @@ describe("hasDiscrepancy", () => {
 });
 
 describe("validateInvoiceVerification", () => {
-  const base = { invoiceNumber: "INV-1", invoiceTotal: 100, discrepancyReason: "", attested: true };
+  const base = { invoiceNumber: "INV-1", invoiceUrl: "", invoiceTotal: 100, discrepancyReason: "", attested: true };
 
   it("passes when invoice number set, totals match, and attested", () => {
     expect(validateInvoiceVerification(base, 100)).toBeNull();

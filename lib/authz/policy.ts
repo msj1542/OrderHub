@@ -77,6 +77,21 @@ const ROLE_PERMISSIONS: Partial<Record<RoleCode, Set<Action>>> = {
     "pricing:view",
   ]),
 
+  [ROLES.COORD_FULFILLMENT]: new Set<Action>([
+    // Union of coordinator + fulfillment permissions
+    "order:create", "order:delete_draft", "order:submit", "order:accept",
+    "order:claim", "order:qc",
+    "order:request_cancel", "order:cancel", "order:decline_cancel",
+    "order:comment_internal", "order:comment_customer", "order:print_labels",
+    "order:release",
+    "production:view", "production:manage",
+    "catalog:view",
+    "resources:download", "resources:manage",
+    "pricing:view",
+    "users:manage_external",
+    "portal:preview",
+  ]),
+
   [ROLES.ACCOUNTING]: new Set<Action>([
     "order:invoice_verify", "order:close",
     "order:comment_internal",

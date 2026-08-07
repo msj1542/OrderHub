@@ -213,6 +213,8 @@ export const orderLines = pgTable("order_lines", {
   lineTotal:           numeric("line_total", { precision: 12, scale: 2 }),
   pricingStatus:       text("pricing_status").notNull().default("priced"),
   isCustom:            boolean("is_custom").notNull().default(false),
+  isExpedited:         boolean("is_expedited").notNull().default(false),
+  requestedDate:       text("requested_date"),
   createdAt:           timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
 });
 
@@ -354,6 +356,7 @@ export const invoiceVerifications = pgTable("invoice_verifications", {
   orderId:           uuid("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
   userId:            uuid("user_id").notNull().references(() => users.id),
   invoiceNumber:     text("invoice_number"),
+  invoiceUrl:        text("invoice_url"),
   invoiceTotal:      numeric("invoice_total", { precision: 12, scale: 2 }),
   discrepancyReason: text("discrepancy_reason"),
   attested:          boolean("attested").notNull().default(false),
@@ -552,6 +555,8 @@ export type OrderFull = Order & {
   comments: (OrderComment & { authorName: string })[];
   pendingCancellationRequest: (CancellationRequest & { requestedByName: string }) | null;
   workOrder: OrderWorkOrderBrief | null;
+  invoiceNumber: string | null;
+  invoiceUrl: string | null;
 };
 
 // Phase 4 types

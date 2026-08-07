@@ -11,6 +11,7 @@ const TOLERANCE = 0.005;
 
 export type InvoiceVerificationInput = {
   invoiceNumber:      string;
+  invoiceUrl:         string;
   invoiceTotal:       number | null;
   discrepancyReason:  string;
   attested:           boolean;

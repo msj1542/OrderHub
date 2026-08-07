@@ -8,7 +8,7 @@ import { ROLES, type RoleCode } from "@/lib/authz/roles";
 
 export type UserState = { error?: string; success?: string };
 
-const INVITABLE_EXTERNAL_ROLES = new Set<RoleCode>([ROLES.EXTERNAL_ORDERING, ROLES.EXTERNAL_REFERENCE]);
+const INVITABLE_EXTERNAL_ROLES = new Set<RoleCode>([ROLES.EXTERNAL_ADMIN, ROLES.EXTERNAL_ORDERING, ROLES.EXTERNAL_REFERENCE]);
 
 export async function inviteCompanyUserAction(
   _prev: UserState,
@@ -26,7 +26,7 @@ export async function inviteCompanyUserAction(
     const roleCode = formData.get("roleCode") as RoleCode;
 
     if (!INVITABLE_EXTERNAL_ROLES.has(roleCode)) {
-      return { error: "Company admins can invite ordering or reference-only users." };
+      return { error: "Invalid role for company user invite." };
     }
 
     await createUser({ email, name, roleCode, companyId: user.companyId });
