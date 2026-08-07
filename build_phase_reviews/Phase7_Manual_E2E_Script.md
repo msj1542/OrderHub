@@ -122,11 +122,13 @@ cover each role, or `internal_admin` throughout if that's simpler.
    `orders` as one user's JWT via the Supabase SQL editor's "run as user" feature (or the
    `anon`/`authenticated` client) and confirm the other user's order isn't visible.
 
-## 6. Deploy pipeline (once Hostinger is wired — see HANDOFF_Phase6-7.md)
+## 6. Deploy pipeline (once Vercel is wired — see HANDOFF_Phase6-7.md)
 
-1. Push a commit to `main`, watch the GitHub Action run end-to-end (migrations → build →
-   Hostinger SSH deploy).
-2. Load the production domain, confirm the app is live and a login works.
+1. Push a commit to `main`. Watch the GitHub Action run (migrations + build validation) and
+   the Vercel dashboard (actual deploy — auto-triggered separately by Vercel's GitHub
+   integration, not by the Action).
+2. Load the Vercel-assigned domain (or the custom domain, once configured), confirm the app
+   is live and a login works.
 
 ---
 

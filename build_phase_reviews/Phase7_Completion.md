@@ -121,20 +121,25 @@ also upgraded to the `EmptyState` primitive for consistency with every other lis
   gate), and it's a single 120×120 thumbnail — low risk of shipping unverified, deferred
   rather than guessed at.
 
-## 7. Deploy wiring (Hostinger) — code-side prep only
+## 7. Deploy wiring — code-side prep only
 
-Per explicit instruction, the actual Hostinger account/SSH key/domain setup is the
-account owner's to do — an agent cannot create accounts, generate/install SSH keys on a
-remote server, or make a domain decision. What's done:
-- `.github/workflows/deploy.yml`'s Hostinger step (previously `echo "TODO"`) now SSHes in
-  via `appleboy/ssh-action`, does `git fetch` + `git reset --hard origin/main` + `npm ci` +
-  `npm run build` + a restart command, gated behind 5 required + 1 optional GitHub Actions
-  secret (documented inline and in `HANDOFF_Phase6-7.md`'s new "Deploy wiring" section).
-- `next.config.ts`'s `serverActions.allowedOrigins` got a `TODO` comment marking exactly
-  where the production domain needs to be added once decided.
-- `HANDOFF_Phase6-7.md` got a full "Deploy wiring (Hostinger) — setup steps for the account
-  owner" section: hosting provisioning, `.env.local` setup on the server, SSH key
-  generation, the exact 5 GitHub secrets with a table, and a test-the-pipeline checklist.
+Hosting target was originally Hostinger (SSH-based deploy); revised to **Vercel** later in
+this same phase, per instruction. Per explicit instruction, the actual account setup and
+domain decision are the account owner's to do — an agent cannot create accounts or make a
+domain decision. What's done, current (Vercel) state:
+- `.github/workflows/deploy.yml` no longer has a deploy step at all — Vercel's own GitHub
+  integration auto-deploys on every push to `main`, outside this workflow. The workflow now
+  only runs Drizzle migrations against production and a `npm run build` as a CI validation
+  check (no SSH, no secrets beyond the existing Supabase/DB ones already in use for CI).
+- `next.config.ts`'s `serverActions.allowedOrigins` has a `TODO` comment marking exactly
+  where to add Vercel's auto-generated domain and the eventual custom domain.
+- `HANDOFF_Phase6-7.md` has a full "Deploy wiring (Vercel) — setup steps for the account
+  owner" section: signing up, connecting the repo, the exact env vars to set in Vercel's
+  dashboard, and adding a custom domain once live.
+
+(The original Hostinger version of this section — SSH key generation, 5 GitHub Actions
+secrets, `appleboy/ssh-action` — is preserved in this project's git history for reference
+but is no longer the current setup.)
 
 ## 8. Manual E2E — script written, not run
 

@@ -77,7 +77,8 @@ credentials activates sending — **no code change needed.**
 **Stack:** Next.js 16 (App Router, Node runtime) · Supabase Postgres + Auth + Storage + Realtime ·
 Drizzle ORM · Tailwind v4 + `tokens.css` · Radix UI primitives ·
 Vitest 4 (unit tests) · Resend (email, inert until real creds) ·
-Hosted on Hostinger (GitHub push-deploy, deploy step still a stub — see Phase 7 objectives).
+Hosted on Vercel (auto-deploys on push to `main` via Vercel's GitHub integration — see
+"Deploy wiring (Vercel)" below).
 
 **Data delivery pattern:**
 - React Server Components for page data loads
@@ -476,53 +477,51 @@ pass, with the two findings above now addressed (1 documented, 1 fixed).
 - Production queue text search (tab + status filtering only today)
 - CSV import field-level diff (preview shows counts, not before/after values)
 - Empty/onboarding states, a11y pass, perf pass
-- Deploy runbook — **Hostinger deploy step is still a stub**; `serverActions.allowedOrigins`
-  needs the production domain added to `next.config` before go-live
+- Deploy runbook — hosting target moved to Vercel this session (see "Deploy wiring
+  (Vercel)" below); `serverActions.allowedOrigins` still needs the production domain added
+  to `next.config` before go-live
 - Consider the manual browser click-through recommended above (not technically a
   REBUILD_PLAN.md checklist item, but a real verification gap across every phase since 4)
 - Optional: fix the RLS own-scope gap on `orders`/`order_lines`/`order_comments` proactively
   rather than waiting for a future phase that needs Realtime/PostgREST on those tables
 
-## Deploy wiring (Hostinger) — setup steps for the account owner
+## Deploy wiring (Vercel) — setup steps for the account owner
 
-The code side is prepped (`.github/workflows/deploy.yml`'s Hostinger step, previously an
-`echo "TODO"` stub, now SSHes in and runs `git reset --hard` + `npm ci` + `npm run build` +
-a restart command). This can't be finished or tested by an agent — it needs an actual
-Hostinger account, SSH key, and domain decision. Steps:
+Hosting target changed from Hostinger to **Vercel** after this session's initial pass (see
+`build_phase_reviews/Phase7_Completion.md` for the superseded Hostinger version). Vercel's
+GitHub integration deploys automatically on every push to `main` — there's no SSH step to
+wire up, and `.github/workflows/deploy.yml` now only runs migrations + a build-validation
+check (CI, not the actual deploy). This can't be finished by an agent — it needs an actual
+Vercel account and a domain decision. Steps:
 
-1. **Provision hosting.** In Hostinger's hPanel, create a Node.js application (or a VPS —
-   either works with this deploy step) pointed at wherever you'll clone this repo on the
-   server. Node 20+ to match `actions/setup-node` in the workflow.
-2. **Clone the repo on the server** (one-time): `git clone <this-repo-url> <app-dir>`, then
-   create `.env.local` in `<app-dir>` with the **production** values for every var listed
-   in this doc's "Environment Variables" section above (production Supabase URL/keys,
-   production `DATABASE_URL`, real `RESEND_API_KEY`/`RESEND_FROM_EMAIL` if email should go
-   live, `NEXT_PUBLIC_APP_URL` set to the production domain, `INITIAL_ADMIN_EMAIL`).
-   `.env.local` is gitignored, so it survives every future `git reset --hard` deploy.
-3. **Generate a deploy SSH key pair** (don't reuse your personal key):
-   `ssh-keygen -t ed25519 -C "orderhub-deploy" -f orderhub_deploy_key -N ""`
-   Add the **public** key (`orderhub_deploy_key.pub`) to the server's
-   `~/.ssh/authorized_keys` for the deploy user (via hPanel's SSH key manager or by hand).
-4. **Add 5 GitHub Actions secrets** (repo → Settings → Secrets and variables → Actions):
-   | Secret | Value |
-   |---|---|
-   | `HOSTINGER_HOST` | server hostname or IP from hPanel |
-   | `HOSTINGER_USERNAME` | SSH username from hPanel |
-   | `HOSTINGER_SSH_KEY` | contents of the **private** key file (`orderhub_deploy_key`) generated in step 3 |
-   | `HOSTINGER_PORT` | SSH port from hPanel (Hostinger commonly uses a non-22 port) |
-   | `HOSTINGER_APP_DIR` | absolute path to the cloned app directory on the server |
-
-   Optional 6th secret `HOSTINGER_RESTART_CMD` if your app's restart mechanism isn't a
-   touched `tmp/restart.txt` (Passenger convention) — e.g. `pm2 restart orderhub` for a
-   pm2-managed process.
-5. **Pick the production domain**, then:
+1. **Sign up at [vercel.com](https://vercel.com) with GitHub** (use the same GitHub account/org
+   this repo lives in, so the next step can see it).
+2. **Connect the OrderHub repo**: in the Vercel dashboard, "Add New… → Project", select this
+   repo. Vercel auto-detects Next.js — default build settings are correct, no changes needed.
+3. **Add environment variables** (Vercel project → Settings → Environment Variables) — every
+   var listed in this doc's "Environment Variables" section above, with **production**
+   values:
+   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+   - `DATABASE_URL` (production Supabase pooler connection string)
+   - `RESEND_API_KEY`, `RESEND_FROM_EMAIL` (real values once email should go live; leave the
+     shipped placeholders if not — `emailGuard.ts` no-ops safely either way)
+   - `INITIAL_ADMIN_EMAIL`
+   - `BUSINESS_TIMEZONE`
+   - `NEXT_PUBLIC_APP_URL` — Vercel shows an auto-generated domain (e.g.
+     `orderhub-prod.vercel.app`) as soon as the project is created; use that value initially,
+     update it once a custom domain is live (step 6).
+4. **Push to `main`** — Vercel auto-deploys on every push automatically once the project is
+   connected; no manual trigger needed. Watch the deploy in the Vercel dashboard.
+5. **Run the production migration** once, against the production `DATABASE_URL` (Vercel
+   doesn't run Drizzle migrations itself — this repo's GitHub Actions workflow does, via the
+   "Run Drizzle migrations" step, using the same `DATABASE_URL` secret set in GitHub Actions
+   secrets, separately from the Vercel env vars in step 3).
+6. **Once live, add the custom domain**: Vercel project → Settings → Domains → add the
+   domain, follow its DNS instructions. Then:
    - Update `next.config.ts`'s `serverActions.allowedOrigins` (currently has a `TODO`
-     comment marking the spot) to include it — Server Actions 403 from any origin not
-     listed there.
-   - Set `NEXT_PUBLIC_APP_URL` in the server's `.env.local` (step 2) to match.
-   - Point the domain's DNS at the Hostinger server per hPanel's instructions.
-6. **Test the pipeline**: push a commit to `main` (or re-run this session's Phase 7 commit),
-   watch the Action run in GitHub → Actions, then confirm the site is live at the domain.
+     comment marking the spot) to include both the Vercel auto-generated domain and the
+     custom domain — Server Actions are rejected with a 403 from any origin not listed.
+   - Update `NEXT_PUBLIC_APP_URL` (step 3) to the custom domain.
 
 ### Phase 7 Non-Goals (per REBUILD_PLAN.md, still post-MVP / no committed phase)
 - Reminder/escalation scheduler (pg_cron) — recipients/thresholds undefined
