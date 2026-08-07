@@ -87,6 +87,13 @@ export function DataTable<T>({
             {columns.map((col) => (
               <th
                 key={col.key}
+                aria-sort={
+                  col.sortable
+                    ? sortKey === col.key
+                      ? sortDir === "asc" ? "ascending" : sortDir === "desc" ? "descending" : "none"
+                      : "none"
+                    : undefined
+                }
                 style={{
                   padding: "var(--space-3) var(--space-4)",
                   textAlign: "left",
@@ -101,6 +108,18 @@ export function DataTable<T>({
                   cursor: col.sortable ? "pointer" : undefined,
                 }}
                 onClick={() => col.sortable && handleSort(col.key)}
+                tabIndex={col.sortable ? 0 : undefined}
+                role={col.sortable ? "button" : undefined}
+                onKeyDown={
+                  col.sortable
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleSort(col.key);
+                        }
+                      }
+                    : undefined
+                }
               >
                 <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-1)" }}>
                   {col.header}

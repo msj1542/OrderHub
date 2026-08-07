@@ -184,7 +184,7 @@ export async function previewImportAction(
 
   try {
     const rows = parseCsv(csvText);
-    const existing = await listProducts({ includeInactive: true });
+    const { products: existing } = await listProducts({ includeInactive: true });
     const existingSkus = new Set(existing.map((p) => p.sku));
 
     const report =
@@ -213,7 +213,7 @@ export async function applyImportAction(
 
   try {
     const rows = parseCsv(csvText);
-    const existing = await listProducts({ includeInactive: true });
+    const { products: existing } = await listProducts({ includeInactive: true });
     const existingSkus = new Set(existing.map((p) => p.sku));
     const existingById = new Map(existing.map((p) => [p.sku, p]));
 

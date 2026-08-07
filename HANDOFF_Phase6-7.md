@@ -102,16 +102,15 @@ Realtime. All 3 tables were re-verified directly against production during the p
 audit: present in the `supabase_realtime` publication, `REPLICA IDENTITY FULL` set, and
 correctly scoped RLS in place.
 
-**Known, documented, non-blocking gap:** the `orders`/`order_lines`/`order_comments` RLS
-`_select_external` policies (written in Phase 3) implement **company-only** scoping —
-they do **not** enforce the "own" scope that `orderScopeCondition()` enforces at the app
-layer. This was found during the pre-final audit and is now called out with an explicit
-`NOTE:` comment directly above each of the 3 policies in `supabase/migrations/0003_orders.sql`
-(added post-Phase-6, see "Post-Phase-6 fixes" below). **Zero live impact today** — these
-3 tables are not in the Realtime publication and all app reads go through the
-service-role connection, where `orderScopeCondition()` is authoritative. **This becomes a
-real issue only if a future phase adds Realtime or direct PostgREST access to these
-tables** — tighten the RLS to match `orderScopeCondition()` before doing that.
+**Fixed in Phase 7:** the `orders`/`order_lines`/`order_comments` RLS `_select_external`
+policies (written in Phase 3) used to implement company-only scoping, looser than the app
+layer's `orderScopeCondition()`. `supabase/migrations/0007_orders_rls_own_scope.sql` (a new
+migration, applied to production) added a `current_order_scope()` helper function and
+redefined all 3 policies to mirror `orderScopeCondition()` exactly — company match, plus a
+`created_by_user_id` match whenever `companies.order_scope = 'own'`. Verified directly
+against production by reading back `pg_policies.qual` for all 3 policies. `0003_orders.sql`
+keeps its original policy definitions for historical accuracy (a fresh migration run
+applies 0003 first, then 0007 supersedes it) with updated comments pointing to 0007.
 
 **Money:** `numeric(12,2)` in DB. `lib/pricing/money.ts` has `toDecimal`, `addMoney`,
 `formatMoney`, `parseMoney`. All totals are computed in JS, rounded, stored as decimals.
@@ -251,6 +250,7 @@ with ≥1 policy; seed counts, storage buckets, and Realtime prerequisites all c
 | `0004_production.sql` | `production_work_orders`, `production_line_progress`, `production_recuts`, `qc_attestations` | |
 | `0005_invoice_verification.sql` | `invoice_verifications` | |
 | `0006_phase6.sql` | `notifications`, `notification_reads`, `resource_categories`, `resources`, `resource_versions` + `companies` profile columns + `resources` Storage bucket + Realtime-enabling RLS + publication + seed categories | |
+| `0007_orders_rls_own_scope.sql` | No new tables. Adds `current_order_scope()` helper + redefines the 3 `orders`/`order_lines`/`order_comments` external-select RLS policies to mirror `orderScopeCondition()` exactly (own-scope fix, Phase 7). |
 
 **Drizzle commands (run from project root):**
 ```bash
@@ -443,9 +443,6 @@ Both fixes committed as `rebuild: Phase 7 prep (RLS doc note + label reprint for
   already fully handled by the Phase 2 Catalog Manager (`product_files.is_thumbnail`);
   duplicating that here would be redundant.
 - Portal preview is an inline launcher, not a modal dialog (see Auth Details above).
-- The RLS company-only-vs-own-scope gap on 3 tables (see Architecture note) — documented,
-  zero live impact, not fixed (by design; fixing it now would be unscoped work with no
-  current benefit since nothing reads those tables via the authenticated-role path).
 - Browser E2E of the full Phase 5/6 flow set (invoice verify → release → close, reorder,
   supplemental, notifications, resource upload/download, company/user CRUD, operations
   settings, portal preview, Realtime) has **never been performed** across any of these
@@ -485,6 +482,47 @@ pass, with the two findings above now addressed (1 documented, 1 fixed).
   REBUILD_PLAN.md checklist item, but a real verification gap across every phase since 4)
 - Optional: fix the RLS own-scope gap on `orders`/`order_lines`/`order_comments` proactively
   rather than waiting for a future phase that needs Realtime/PostgREST on those tables
+
+## Deploy wiring (Hostinger) — setup steps for the account owner
+
+The code side is prepped (`.github/workflows/deploy.yml`'s Hostinger step, previously an
+`echo "TODO"` stub, now SSHes in and runs `git reset --hard` + `npm ci` + `npm run build` +
+a restart command). This can't be finished or tested by an agent — it needs an actual
+Hostinger account, SSH key, and domain decision. Steps:
+
+1. **Provision hosting.** In Hostinger's hPanel, create a Node.js application (or a VPS —
+   either works with this deploy step) pointed at wherever you'll clone this repo on the
+   server. Node 20+ to match `actions/setup-node` in the workflow.
+2. **Clone the repo on the server** (one-time): `git clone <this-repo-url> <app-dir>`, then
+   create `.env.local` in `<app-dir>` with the **production** values for every var listed
+   in this doc's "Environment Variables" section above (production Supabase URL/keys,
+   production `DATABASE_URL`, real `RESEND_API_KEY`/`RESEND_FROM_EMAIL` if email should go
+   live, `NEXT_PUBLIC_APP_URL` set to the production domain, `INITIAL_ADMIN_EMAIL`).
+   `.env.local` is gitignored, so it survives every future `git reset --hard` deploy.
+3. **Generate a deploy SSH key pair** (don't reuse your personal key):
+   `ssh-keygen -t ed25519 -C "orderhub-deploy" -f orderhub_deploy_key -N ""`
+   Add the **public** key (`orderhub_deploy_key.pub`) to the server's
+   `~/.ssh/authorized_keys` for the deploy user (via hPanel's SSH key manager or by hand).
+4. **Add 5 GitHub Actions secrets** (repo → Settings → Secrets and variables → Actions):
+   | Secret | Value |
+   |---|---|
+   | `HOSTINGER_HOST` | server hostname or IP from hPanel |
+   | `HOSTINGER_USERNAME` | SSH username from hPanel |
+   | `HOSTINGER_SSH_KEY` | contents of the **private** key file (`orderhub_deploy_key`) generated in step 3 |
+   | `HOSTINGER_PORT` | SSH port from hPanel (Hostinger commonly uses a non-22 port) |
+   | `HOSTINGER_APP_DIR` | absolute path to the cloned app directory on the server |
+
+   Optional 6th secret `HOSTINGER_RESTART_CMD` if your app's restart mechanism isn't a
+   touched `tmp/restart.txt` (Passenger convention) — e.g. `pm2 restart orderhub` for a
+   pm2-managed process.
+5. **Pick the production domain**, then:
+   - Update `next.config.ts`'s `serverActions.allowedOrigins` (currently has a `TODO`
+     comment marking the spot) to include it — Server Actions 403 from any origin not
+     listed there.
+   - Set `NEXT_PUBLIC_APP_URL` in the server's `.env.local` (step 2) to match.
+   - Point the domain's DNS at the Hostinger server per hPanel's instructions.
+6. **Test the pipeline**: push a commit to `main` (or re-run this session's Phase 7 commit),
+   watch the Action run in GitHub → Actions, then confirm the site is live at the domain.
 
 ### Phase 7 Non-Goals (per REBUILD_PLAN.md, still post-MVP / no committed phase)
 - Reminder/escalation scheduler (pg_cron) — recipients/thresholds undefined

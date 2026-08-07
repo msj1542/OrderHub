@@ -6,7 +6,7 @@
  * All status transitions are transactional and role-gated.
  */
 
-import { and, asc, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import {
@@ -43,19 +43,47 @@ export type OrderFilters = {
   status?:    OrderStatus;
   companyId?: string;
   search?:    string;
+  /** 1-indexed page number. Omit (or pass neither page nor pageSize) to return every matching row, unpaginated. */
+  page?:      number;
+  pageSize?:  number;
+};
+
+export type OrderListResult = {
+  orders: OrderSummary[];
+  total:  number;
 };
 
 export async function listOrders(
   user: AppUser,
   filters: OrderFilters = {},
-): Promise<OrderSummary[]> {
+): Promise<OrderListResult> {
   const scope = orderScopeCondition(user);
 
   const conditions = scope ? [scope] : [];
   if (filters.status)    conditions.push(eq(orders.status, filters.status));
   if (filters.companyId && user.role.isInternal) conditions.push(eq(orders.companyId, filters.companyId));
+  if (filters.search?.trim()) {
+    const q = `%${filters.search.trim()}%`;
+    conditions.push(
+      or(
+        ilike(orders.orderNumber, q),
+        ilike(orders.poNumber, q),
+        ilike(companies.name, q),
+        ilike(users.name, q),
+      )!,
+    );
+  }
+  const where = conditions.length ? and(...conditions) : undefined;
 
-  const rows = await db
+  const countRow = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(orders)
+    .innerJoin(companies, eq(companies.id, orders.companyId))
+    .innerJoin(users,     eq(users.id,     orders.createdByUserId))
+    .where(where);
+  const total = countRow[0]?.count ?? 0;
+
+  let query = db
     .select({
       order:       orders,
       companyName: companies.name,
@@ -64,8 +92,17 @@ export async function listOrders(
     .from(orders)
     .innerJoin(companies, eq(companies.id, orders.companyId))
     .innerJoin(users,     eq(users.id,     orders.createdByUserId))
-    .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(orders.updatedAt));
+    .where(where)
+    .orderBy(desc(orders.updatedAt))
+    .$dynamic();
+
+  if (filters.page || filters.pageSize) {
+    const pageSize = filters.pageSize ?? 25;
+    const page     = Math.max(1, filters.page ?? 1);
+    query = query.limit(pageSize).offset((page - 1) * pageSize);
+  }
+
+  const rows = await query;
 
   // Load line counts in one batch query
   const orderIds = rows.map((r) => r.order.id);
@@ -83,12 +120,15 @@ export async function listOrders(
 
   const countMap = new Map(lineCounts.map((r) => [r.orderId, r.lineCount]));
 
-  return rows.map(({ order, companyName, creatorName }) => ({
-    ...order,
-    companyName,
-    createdByName: creatorName,
-    lineCount: countMap.get(order.id) ?? 0,
-  }));
+  return {
+    orders: rows.map(({ order, companyName, creatorName }) => ({
+      ...order,
+      companyName,
+      createdByName: creatorName,
+      lineCount: countMap.get(order.id) ?? 0,
+    })),
+    total,
+  };
 }
 
 export async function getOrder(

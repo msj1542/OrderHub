@@ -54,6 +54,11 @@ export function MaterialSettingsPanel({ materials }: Props) {
         </div>
 
         <div style={{ overflowY: "auto" }}>
+          {materials.length === 0 && (
+            <p style={{ padding: "var(--space-5) var(--space-4)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", textAlign: "center" }}>
+              No materials yet. Use &quot;+ New&quot; to add your first material.
+            </p>
+          )}
           {materials.map((m) => (
             <button
               key={m.id}

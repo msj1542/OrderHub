@@ -3,6 +3,9 @@
 import * as React from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Pagination } from "@/components/ui/pagination";
+import { ClipboardCheck } from "lucide-react";
 import { QcModal }     from "@/components/production/qc-modal";
 import { RecutModal }  from "@/components/production/recut-modal";
 import { createClient } from "@/lib/supabase/client";
@@ -242,6 +245,9 @@ function WorkOrderDetail({
 
 type Props = {
   workOrders: WorkOrderSummary[];
+  total:      number;
+  page:       number;
+  pageSize:   number;
   activeTab:  Tab;
   canManage:  boolean;
   canQC:      boolean;
@@ -251,6 +257,9 @@ type Props = {
 
 export function ProductionQueue({
   workOrders,
+  total,
+  page,
+  pageSize,
   activeTab,
   canManage,
   canQC,
@@ -268,6 +277,11 @@ export function ProductionQueue({
 
   function switchTab(tab: Tab) {
     const params = new URLSearchParams({ tab });
+    router.push(`${pathname}?${params.toString()}`);
+  }
+
+  function goToPage(nextPage: number) {
+    const params = new URLSearchParams({ tab: activeTab, page: String(nextPage) });
     router.push(`${pathname}?${params.toString()}`);
   }
 
@@ -390,9 +404,11 @@ export function ProductionQueue({
       {/* Work order list */}
       <div className="flex-1 overflow-auto p-[var(--space-6)]">
         {workOrders.length === 0 ? (
-          <p className="text-[var(--text-sm)] text-[var(--color-text-muted)]">
-            No work orders in this view.
-          </p>
+          <EmptyState
+            icon={<ClipboardCheck size={32} />}
+            title="No work orders"
+            description="No work orders in this view."
+          />
         ) : (
           <div className="flex flex-col gap-[var(--space-3)]">
             {workOrders.map((wo) => {
@@ -537,6 +553,8 @@ export function ProductionQueue({
           </div>
         )}
       </div>
+
+      <Pagination page={page} pageSize={pageSize} total={total} onPageChange={goToPage} />
 
       {/* QC Modal */}
       <QcModal

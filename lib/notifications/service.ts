@@ -58,18 +58,39 @@ export async function insertNotification(tx: Tx, input: NewNotificationInput): P
 
 // ── List / counts ─────────────────────────────────────────────
 
+export type NotificationListResult = {
+  notifications: NotificationWithReadState[];
+  total:         number;
+};
+
 export async function listNotifications(
   user: AppUser,
-  opts: { onlyUnread?: boolean; limit?: number } = {},
-): Promise<NotificationWithReadState[]> {
-  const rows = await db
+  opts: { onlyUnread?: boolean; page?: number; pageSize?: number } = {},
+): Promise<NotificationListResult> {
+  const where = visibilityCondition(user);
+
+  const countRow = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(notifications)
+    .where(where);
+  const total = countRow[0]?.count ?? 0;
+
+  let query = db
     .select()
     .from(notifications)
-    .where(visibilityCondition(user))
+    .where(where)
     .orderBy(desc(notifications.createdAt))
-    .limit(opts.limit ?? 100);
+    .$dynamic();
 
-  if (!rows.length) return [];
+  if (opts.page || opts.pageSize) {
+    const pageSize = opts.pageSize ?? 25;
+    const page     = Math.max(1, opts.page ?? 1);
+    query = query.limit(pageSize).offset((page - 1) * pageSize);
+  }
+
+  const rows = await query;
+
+  if (!rows.length) return { notifications: [], total };
 
   const ids = rows.map((r) => r.id);
   const readRows = await db
@@ -79,7 +100,10 @@ export async function listNotifications(
   const readSet = new Set(readRows.map((r) => r.notificationId));
 
   const withRead = rows.map((n) => ({ ...n, isRead: readSet.has(n.id) }));
-  return opts.onlyUnread ? withRead.filter((n) => !n.isRead) : withRead;
+  return {
+    notifications: opts.onlyUnread ? withRead.filter((n) => !n.isRead) : withRead,
+    total,
+  };
 }
 
 export async function getUnreadCount(user: AppUser): Promise<number> {

@@ -11,7 +11,7 @@ export default async function CatalogSettingsPage() {
   const user = await requireUser();
   if (!can(user, "catalog:manage")) redirect("/dashboard");
 
-  const [products, materials] = await Promise.all([
+  const [{ products }, materials] = await Promise.all([
     listProducts({ includeInactive: true }),
     listMaterials(),
   ]);

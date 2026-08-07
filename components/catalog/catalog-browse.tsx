@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { EmptyState }             from "@/components/ui/empty-state";
+import { Pagination }             from "@/components/ui/pagination";
 import { Layers }                 from "lucide-react";
 import { formatMoney }            from "@/lib/pricing/money";
 import type { MaterialWithRolls, ProductWithMaterials } from "@/lib/db/schema";
@@ -10,21 +12,37 @@ import { ProductDetails }         from "./product-details";
 
 interface Props {
   products:       ProductWithMaterials[];
+  total:          number;
+  page:           number;
+  pageSize:       number;
+  search:         string;
   materials:      MaterialWithRolls[];
   pricingVisible: boolean;
 }
 
-export function CatalogBrowse({ products, materials, pricingVisible }: Props) {
-  const [query, setQuery] = useState("");
+export function CatalogBrowse({ products, total, page, pageSize, search, materials, pricingVisible }: Props) {
+  const router   = useRouter();
+  const pathname = usePathname();
+  const [query, setQuery] = useState(search);
 
-  const filtered = query.trim()
-    ? products.filter((p) =>
-        [p.sku, p.brand, p.model, p.yearStart, p.partName, p.attr1, p.attr2, p.description]
-          .join(" ")
-          .toLowerCase()
-          .includes(query.toLowerCase()),
-      )
-    : products;
+  // Debounce search text → URL param (server refetch), reset to page 1.
+  useEffect(() => {
+    if (query === search) return;
+    const timeout = setTimeout(() => {
+      const params = new URLSearchParams();
+      if (query) params.set("q", query);
+      router.push(`${pathname}?${params.toString()}`);
+    }, 350);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  function goToPage(nextPage: number) {
+    const params = new URLSearchParams();
+    if (search) params.set("q", search);
+    params.set("page", String(nextPage));
+    router.push(`${pathname}?${params.toString()}`);
+  }
 
   const columns: Column<ProductWithMaterials>[] = [
     {
@@ -97,7 +115,7 @@ export function CatalogBrowse({ products, materials, pricingVisible }: Props) {
             whiteSpace: "nowrap",
           }}
         >
-          {filtered.length} product{filtered.length !== 1 ? "s" : ""}
+          {total} product{total !== 1 ? "s" : ""}
         </span>
       </div>
 
@@ -127,7 +145,7 @@ export function CatalogBrowse({ products, materials, pricingVisible }: Props) {
       {/* Table */}
       <DataTable
         columns={columns}
-        rows={filtered}
+        rows={products}
         getKey={(p) => p.id}
         expandedContent={(p) => (
           <ProductDetails product={p} pricingVisible={pricingVisible} />
@@ -135,11 +153,13 @@ export function CatalogBrowse({ products, materials, pricingVisible }: Props) {
         emptyState={
           <EmptyState
             icon={<Layers size={32} />}
-            title={query ? "No products match your search" : "No products yet"}
-            description={query ? "Try a different search term." : "Products will appear here once the catalog is seeded."}
+            title={search ? "No products match your search" : "No products yet"}
+            description={search ? "Try a different search term." : "Products will appear here once the catalog is seeded."}
           />
         }
       />
+
+      <Pagination page={page} pageSize={pageSize} total={total} onPageChange={goToPage} />
     </section>
   );
 }

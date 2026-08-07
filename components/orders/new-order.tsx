@@ -316,6 +316,7 @@ export function NewOrder({
                   <button
                     type="button"
                     onClick={() => removeLine(line.id)}
+                    aria-label="Remove line item"
                     className="text-[var(--color-text-muted)] hover:text-[var(--status-danger-text)] transition-colors"
                   >
                     <Trash2 size={14} />
@@ -362,7 +363,7 @@ export function NewOrder({
               <>
                 <div className="flex items-start justify-between">
                   <Badge variant="warning">Custom Item</Badge>
-                  <button type="button" onClick={() => removeLine(line.id)} className="text-[var(--color-text-muted)] hover:text-[var(--status-danger-text)]">
+                  <button type="button" onClick={() => removeLine(line.id)} aria-label="Remove line item" className="text-[var(--color-text-muted)] hover:text-[var(--status-danger-text)]">
                     <Trash2 size={14} />
                   </button>
                 </div>

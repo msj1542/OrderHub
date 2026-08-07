@@ -61,7 +61,7 @@ export default async function NewOrderPage({
   const supplementalToOrderId = params.supplemental_to;
   const reorderFromOrderId = params.reorder_from;
 
-  const [products, materialsData, allCompanies] = await Promise.all([
+  const [{ products }, materialsData, allCompanies] = await Promise.all([
     listProducts({ includeInactive: false, customerVisibleOnly: !user.role.isInternal }),
     listMaterials(),
     user.role.isInternal

@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth";
 import { can, canAny } from "@/lib/authz/policy";
 import { redirect } from "next/navigation";
 import { listOrders, getOrder } from "@/lib/orders/service";
+import type { OrderStatus } from "@/lib/db/schema";
 import { MasterDetail } from "@/components/ui/master-detail";
 import { OrdersWorkspace } from "@/components/orders/orders-workspace";
 import { OrderDetail } from "@/components/orders/order-detail";
@@ -12,10 +13,12 @@ import Link from "next/link";
 
 export const metadata = { title: "Orders — Ordering Hub" };
 
+const PAGE_SIZE = 25;
+
 export default async function OrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ id?: string }>;
+  searchParams: Promise<{ id?: string; q?: string; status?: string; page?: string }>;
 }) {
   const user = await requireUser();
   if (
@@ -29,9 +32,17 @@ export default async function OrdersPage({
 
   const params    = await searchParams;
   const selectedId = params.id;
+  const search     = params.q ?? "";
+  const status     = (params.status ?? "") as OrderStatus | "";
+  const page       = Math.max(1, Number(params.page) || 1);
 
-  const [orders, selectedOrder] = await Promise.all([
-    listOrders(user),
+  const [{ orders, total }, selectedOrder] = await Promise.all([
+    listOrders(user, {
+      search: search || undefined,
+      status: status || undefined,
+      page,
+      pageSize: PAGE_SIZE,
+    }),
     selectedId ? getOrder(selectedId, user) : null,
   ]);
 
@@ -49,6 +60,11 @@ export default async function OrdersPage({
       )}
       <OrdersWorkspace
         orders={orders}
+        total={total}
+        page={page}
+        pageSize={PAGE_SIZE}
+        search={search}
+        status={status}
         selectedId={selectedId}
         canSeePrice={canSeePrice}
         isInternal={user.role.isInternal}

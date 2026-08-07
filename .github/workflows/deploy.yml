@@ -29,7 +29,32 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
-      # Hostinger git-push deploy step — filled in once hosting is
-      # provisioned (target: SSH deploy or Hostinger's Git integration).
+      # Hostinger deploy: SSH in, pull the just-pushed commit, install prod
+      # deps, build, and restart the app. Requires 5 repo secrets (see
+      # HANDOFF_Phase6-7.md's "Deploy wiring" section for exact setup steps):
+      #   HOSTINGER_HOST         — server hostname or IP
+      #   HOSTINGER_USERNAME     — SSH username
+      #   HOSTINGER_SSH_KEY      — private key matching a public key authorized on the server
+      #   HOSTINGER_PORT         — SSH port (Hostinger shared/Node.js hosting commonly uses a non-22 port)
+      #   HOSTINGER_APP_DIR      — absolute path to the app directory on the server
+      # Optional:
+      #   HOSTINGER_RESTART_CMD  — command to restart the running app after build
+      #                            (default below matches Hostinger/Passenger's
+      #                            restart-by-touched-file convention for Node.js apps —
+      #                            override if your setup uses pm2 or something else)
       - name: Deploy to Hostinger
-        run: echo "TODO: wire up Hostinger deploy step"
+        uses: appleboy/ssh-action@v1
+        with:
+          host:     ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USERNAME }}
+          key:      ${{ secrets.HOSTINGER_SSH_KEY }}
+          port:     ${{ secrets.HOSTINGER_PORT }}
+          script: |
+            set -e
+            cd "${{ secrets.HOSTINGER_APP_DIR }}"
+            git fetch origin main
+            git reset --hard origin/main
+            npm ci
+            npm run build
+            mkdir -p tmp
+            ${{ secrets.HOSTINGER_RESTART_CMD || 'touch tmp/restart.txt' }}

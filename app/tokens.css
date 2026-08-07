@@ -77,7 +77,7 @@
   --grey-200: #dde1e7;
   --grey-300: #c4cad4;
   --grey-400: #9ba5b3;
-  --grey-500: #6f7c8e;
+  --grey-500: #647080; /* darkened from #6f7c8e for WCAG AA text contrast (was ~4.24:1 on white, now ~5.0:1) — used only by --color-text-muted */
   --grey-600: #505c6e;
   --grey-700: #38424f;
   --grey-800: #252d38;

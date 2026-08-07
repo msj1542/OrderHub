@@ -61,6 +61,7 @@ export function Toaster() {
               )}
             </div>
             <ToastPrimitive.Close
+              aria-label="Dismiss notification"
               style={{
                 background: "transparent",
                 border:     "none",

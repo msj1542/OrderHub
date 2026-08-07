@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Pagination } from "@/components/ui/pagination";
 import { markNotificationReadAction, markAllNotificationsReadAction } from "@/app/(app)/notifications/actions";
 import type { NotificationWithReadState } from "@/lib/db/schema";
 
@@ -15,11 +16,26 @@ function formatWhen(ts: string | Date) {
   });
 }
 
-export function NotificationList({ notifications }: { notifications: NotificationWithReadState[] }) {
-  const router = useRouter();
+type Props = {
+  notifications: NotificationWithReadState[];
+  total:         number;
+  page:          number;
+  pageSize:      number;
+};
+
+export function NotificationList({ notifications, total, page, pageSize }: Props) {
+  const router   = useRouter();
+  const pathname = usePathname();
   const [pending, setPending] = React.useState<string | null>(null);
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
+
+  function goToPage(nextPage: number) {
+    const params = new URLSearchParams();
+    if (nextPage > 1) params.set("page", String(nextPage));
+    const qs = params.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
+  }
 
   async function handleMarkRead(id: string) {
     setPending(id);
@@ -91,6 +107,8 @@ export function NotificationList({ notifications }: { notifications: Notificatio
           </div>
         ))}
       </div>
+
+      <Pagination page={page} pageSize={pageSize} total={total} onPageChange={goToPage} />
     </div>
   );
 }

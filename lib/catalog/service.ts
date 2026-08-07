@@ -1,4 +1,4 @@
-import { and, eq, ilike, or } from "drizzle-orm";
+import { and, eq, ilike, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   materials,
@@ -83,11 +83,19 @@ type ProductFilters = {
   isActive?: boolean;
   includeInactive?: boolean;
   customerVisibleOnly?: boolean;
+  /** 1-indexed page number. Omit (or pass neither page nor pageSize) to return every matching row, unpaginated. */
+  page?: number;
+  pageSize?: number;
+};
+
+export type ProductListResult = {
+  products: ProductWithMaterials[];
+  total:    number;
 };
 
 export async function listProducts(
   filters: ProductFilters = {},
-): Promise<ProductWithMaterials[]> {
+): Promise<ProductListResult> {
   const conditions = [];
 
   if (!filters.includeInactive) {
@@ -113,12 +121,22 @@ export async function listProducts(
     );
   }
 
-  const rows =
-    conditions.length > 0
-      ? await db.select().from(products).where(and(...conditions)).orderBy(products.sku)
-      : await db.select().from(products).orderBy(products.sku);
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-  return hydrateProducts(rows);
+  const countRow = await db.select({ count: sql<number>`count(*)::int` }).from(products).where(where);
+  const total = countRow[0]?.count ?? 0;
+
+  let query = db.select().from(products).where(where).orderBy(products.sku).$dynamic();
+
+  if (filters.page || filters.pageSize) {
+    const pageSize = filters.pageSize ?? 25;
+    const page     = Math.max(1, filters.page ?? 1);
+    query = query.limit(pageSize).offset((page - 1) * pageSize);
+  }
+
+  const rows = await query;
+
+  return { products: await hydrateProducts(rows), total };
 }
 
 export async function getProduct(id: string): Promise<ProductFull | null> {

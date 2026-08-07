@@ -10,8 +10,7 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user    = await requireUser();
-  const preview = await getPreviewContext();
+  const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
   const unreadCount = await getUnreadCount(user);
 
   // Preview mode: render the sidebar with the preview user's role so nav

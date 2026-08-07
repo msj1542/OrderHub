@@ -37,6 +37,11 @@ export function CompanyManager({ companies, canPreview, enterPreviewAction }: Pr
           <Button size="sm" onClick={() => setSelectedId(null)}>+ New</Button>
         </div>
         <div style={{ overflowY: "auto", maxHeight: "calc(100vh - 260px)" }}>
+          {companies.length === 0 && (
+            <p style={{ padding: "var(--space-5) var(--space-4)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", textAlign: "center" }}>
+              No companies yet. Use &quot;+ New&quot; to add your first customer.
+            </p>
+          )}
           {companies.map((c) => (
             <button
               key={c.id}

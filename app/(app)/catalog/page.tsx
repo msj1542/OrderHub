@@ -7,14 +7,27 @@ import { CatalogBrowse } from "@/components/catalog/catalog-browse";
 
 export const metadata = { title: "Product Catalog — Ordering Hub" };
 
-export default async function CatalogPage() {
+const PAGE_SIZE = 25;
+
+export default async function CatalogPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; page?: string }>;
+}) {
   const user = await requireUser();
   if (!can(user, "catalog:view")) redirect("/dashboard");
 
-  const [products, materials] = await Promise.all([
+  const params = await searchParams;
+  const search = params.q ?? "";
+  const page   = Math.max(1, Number(params.page) || 1);
+
+  const [{ products, total }, materials] = await Promise.all([
     listProducts({
-      includeInactive:    user.role.isInternal,
+      includeInactive:     user.role.isInternal,
       customerVisibleOnly: !user.role.isInternal,
+      query:                search || undefined,
+      page,
+      pageSize: PAGE_SIZE,
     }),
     listMaterials(),
   ]);
@@ -24,6 +37,10 @@ export default async function CatalogPage() {
   return (
     <CatalogBrowse
       products={products}
+      total={total}
+      page={page}
+      pageSize={PAGE_SIZE}
+      search={search}
       materials={materials}
       pricingVisible={pricingVisible}
     />

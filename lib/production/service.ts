@@ -41,20 +41,39 @@ const TAB_STATUSES: Record<WorkOrderTab, string[]> = {
 
 // ── List work orders ───────────────────────────────────────────
 
+export type WorkOrderListFilters = {
+  /** 1-indexed page number. Omit (or pass neither page nor pageSize) to return every matching row, unpaginated. */
+  page?:     number;
+  pageSize?: number;
+};
+
+export type WorkOrderListResult = {
+  workOrders: WorkOrderSummary[];
+  total:      number;
+};
+
 export async function listWorkOrders(
   user: AppUser,
   tab: WorkOrderTab = "current",
-): Promise<WorkOrderSummary[]> {
+  filters: WorkOrderListFilters = {},
+): Promise<WorkOrderListResult> {
   if (!can(user, "production:view")) throw new Error("Permission denied.");
 
   const statusFilter = TAB_STATUSES[tab];
   const conditions   = statusFilter.length > 0
     ? [inArray(productionWorkOrders.status, statusFilter)]
     : [];
+  const where = conditions.length ? and(...conditions) : undefined;
 
   const claimedUser = alias(users, "claimed_user");
 
-  const rows = await db
+  const countRow = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(productionWorkOrders)
+    .where(where);
+  const total = countRow[0]?.count ?? 0;
+
+  let query = db
     .select({
       wo:            productionWorkOrders,
       orderNumber:   orders.orderNumber,
@@ -66,10 +85,19 @@ export async function listWorkOrders(
     .innerJoin(orders,      eq(orders.id,     productionWorkOrders.orderId))
     .innerJoin(companies,   eq(companies.id,  orders.companyId))
     .leftJoin(claimedUser,  eq(claimedUser.id, productionWorkOrders.claimedByUserId))
-    .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(productionWorkOrders.createdAt));
+    .where(where)
+    .orderBy(desc(productionWorkOrders.createdAt))
+    .$dynamic();
 
-  if (!rows.length) return [];
+  if (filters.page || filters.pageSize) {
+    const pageSize = filters.pageSize ?? 25;
+    const page     = Math.max(1, filters.page ?? 1);
+    query = query.limit(pageSize).offset((page - 1) * pageSize);
+  }
+
+  const rows = await query;
+
+  if (!rows.length) return { workOrders: [], total };
 
   const woIds    = rows.map((r) => r.wo.id);
   const orderIds = rows.map((r) => r.wo.orderId);
@@ -101,15 +129,18 @@ export async function listWorkOrders(
     doneCountMap.set(row.workOrderId, (doneCountMap.get(row.workOrderId) ?? 0) + pieces.length);
   }
 
-  return rows.map(({ wo, orderNumber, isExpedited, companyName, claimedByName }) => ({
-    ...wo,
-    orderNumber,
-    companyName,
-    isExpedited:   isExpedited ?? false,
-    claimedByName: claimedByName ?? null,
-    totalPieces:   pieceTotalMap.get(wo.orderId) ?? 0,
-    doneCount:     doneCountMap.get(wo.id) ?? 0,
-  }));
+  return {
+    workOrders: rows.map(({ wo, orderNumber, isExpedited, companyName, claimedByName }) => ({
+      ...wo,
+      orderNumber,
+      companyName,
+      isExpedited:   isExpedited ?? false,
+      claimedByName: claimedByName ?? null,
+      totalPieces:   pieceTotalMap.get(wo.orderId) ?? 0,
+      doneCount:     doneCountMap.get(wo.id) ?? 0,
+    })),
+    total,
+  };
 }
 
 // ── Get full work order ────────────────────────────────────────
