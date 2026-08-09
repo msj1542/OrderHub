@@ -10,11 +10,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { formatMoney } from "@/lib/pricing/money";
 import { saveOrderAction, submitOrderAction } from "@/app/(app)/orders/new/actions";
 import { computeRushFee, getExpeditedDateWindow, isWeekendDateString, type AppSettings } from "@/lib/settings/scheduleCalc";
+import { parseCsv } from "@/lib/catalog/csv";
 import type { ProductWithMaterials, MaterialWithRolls, Company } from "@/lib/db/schema";
-import { Plus, Trash2, Search } from "lucide-react";
+import { Plus, Trash2, Search, Upload } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -44,6 +46,15 @@ export type CustomLine = {
 };
 
 export type Line = CatalogLine | CustomLine;
+
+type BulkRow = {
+  raw:        { sku: string; quantity: string; material: string };
+  status:     "valid" | "error";
+  message?:   string;
+  product?:   ProductWithMaterials;
+  materialId?: string;
+  quantity?:  number;
+};
 
 type Props = {
   products:   ProductWithMaterials[];
@@ -139,6 +150,82 @@ export function NewOrder({
   const [customForm, setCustomForm] = React.useState({
     description: "", brand: "", model: "", modelYear: "", coverageArea: "", materialId: "", quantity: 1, notes: "",
   });
+
+  // Bulk upload state
+  const [showBulkUpload, setShowBulkUpload] = React.useState(false);
+  const [bulkRows, setBulkRows]             = React.useState<BulkRow[]>([]);
+
+  function closeBulkUpload() {
+    setShowBulkUpload(false);
+    setBulkRows([]);
+  }
+
+  function downloadBulkTemplate() {
+    const example = products[0]
+      ? `${products[0].sku},1,${products[0].materials[0]?.name ?? "Gloss"}\n`
+      : "";
+    const csv = `sku,quantity,material\n${example}`;
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "order-bulk-upload-template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleBulkFile(file: File) {
+    const text = await file.text();
+    const csvRows = parseCsv(text);
+    const parsed: BulkRow[] = csvRows.map((row) => {
+      const sku          = (row.sku ?? row.SKU ?? "").trim();
+      const quantityRaw   = (row.quantity ?? row.Quantity ?? "").trim();
+      const materialRaw   = (row.material ?? row.Material ?? "").trim();
+      const raw = { sku, quantity: quantityRaw, material: materialRaw };
+
+      if (!sku) return { raw, status: "error", message: "Missing SKU" };
+      const product = products.find((p) => p.sku.toLowerCase() === sku.toLowerCase());
+      if (!product) return { raw, status: "error", message: "SKU not found in catalog" };
+
+      const quantity = parseInt(quantityRaw, 10);
+      if (!Number.isFinite(quantity) || quantity < 1) {
+        return { raw, status: "error", message: "Invalid quantity" };
+      }
+
+      let materialId: string | undefined;
+      if (materialRaw) {
+        const material = product.materials.find((m) => m.name.toLowerCase() === materialRaw.toLowerCase());
+        if (!material) return { raw, status: "error", message: `"${materialRaw}" not offered for this item` };
+        materialId = material.id;
+      } else {
+        materialId = product.materials[0]?.id;
+        if (!materialId) return { raw, status: "error", message: "No material available for this item" };
+      }
+
+      return { raw, status: "valid", product, materialId, quantity };
+    });
+    setBulkRows(parsed);
+  }
+
+  function commitBulkRows() {
+    const validRows = bulkRows.filter(
+      (r): r is BulkRow & { product: ProductWithMaterials; materialId: string; quantity: number } =>
+        r.status === "valid" && !!r.product && !!r.materialId && !!r.quantity,
+    );
+    setLines((prev) => [
+      ...prev,
+      ...validRows.map((r) => ({
+        id:            nextId(),
+        type:          "catalog" as const,
+        product:       r.product,
+        materialId:    r.materialId,
+        quantity:      r.quantity,
+        isExpedited:   orderExpedited,
+        requestedDate: orderExpedited ? orderRequestedDate : "",
+      })),
+    ]);
+    closeBulkUpload();
+  }
 
   // ── Search / filter catalog ──────────────────────────────────
 
@@ -572,6 +659,9 @@ export function NewOrder({
             <Button size="sm" variant="ghost" type="button" onClick={() => setShowCustomForm(true)}>
               <Plus size={14} /> Custom Item
             </Button>
+            <Button size="sm" variant="ghost" type="button" onClick={() => setShowBulkUpload(true)}>
+              <Upload size={14} /> Bulk Upload
+            </Button>
           </div>
         )}
       </section>
@@ -641,6 +731,88 @@ export function NewOrder({
           *This is a requested date, not a guarantee. Confirmation will be provided upon acceptance.
         </p>
       )}
+
+      {/* Bulk upload modal */}
+      <Dialog open={showBulkUpload} onOpenChange={(open) => (open ? setShowBulkUpload(true) : closeBulkUpload())}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Bulk Upload Items</DialogTitle>
+            <DialogDescription>
+              Download the template, fill in a row per item (SKU, quantity, material), then upload it here.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-[var(--space-4)]">
+            <Button size="sm" variant="secondary" type="button" onClick={downloadBulkTemplate}>
+              Download CSV Template
+            </Button>
+
+            <div className="flex flex-col gap-[var(--space-1)]">
+              <Label htmlFor="bulk-csv-file" className="text-[var(--text-xs)]">Upload filled-out CSV</Label>
+              <input
+                id="bulk-csv-file"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleBulkFile(f);
+                }}
+                style={{ fontSize: "var(--text-sm)" }}
+              />
+            </div>
+
+            {bulkRows.length > 0 && (
+              <>
+                <div className="max-h-72 overflow-auto border border-[var(--color-border-subtle)] rounded-[var(--radius-md)]">
+                  <table className="w-full text-[var(--text-xs)]">
+                    <thead className="bg-[var(--color-sunken)] sticky top-0">
+                      <tr>
+                        <th className="text-left p-[var(--space-2)]">SKU</th>
+                        <th className="text-left p-[var(--space-2)]">Qty</th>
+                        <th className="text-left p-[var(--space-2)]">Material</th>
+                        <th className="text-left p-[var(--space-2)]">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bulkRows.map((r, i) => (
+                        <tr key={i} className="border-t border-[var(--color-border-subtle)]">
+                          <td className="p-[var(--space-2)]">{r.raw.sku || "—"}</td>
+                          <td className="p-[var(--space-2)]">{r.raw.quantity || "—"}</td>
+                          <td className="p-[var(--space-2)]">{r.raw.material || "(default)"}</td>
+                          <td className="p-[var(--space-2)]">
+                            {r.status === "valid" ? (
+                              <span style={{ color: "var(--status-success-text)" }}>✓ {r.product?.sku}</span>
+                            ) : (
+                              <span style={{ color: "var(--status-danger-text)" }}>{r.message}</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-[var(--text-xs)] text-[var(--color-text-muted)]">
+                  {bulkRows.filter((r) => r.status === "valid").length} of {bulkRows.length} row(s) will be added.
+                  {bulkRows.some((r) => r.status === "error") && " Rows with errors are skipped — fix and re-upload, or continue to add just the valid rows."}
+                </p>
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="secondary" type="button" onClick={closeBulkUpload}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={commitBulkRows}
+              disabled={!bulkRows.some((r) => r.status === "valid")}
+            >
+              Add {bulkRows.filter((r) => r.status === "valid").length} Item{bulkRows.filter((r) => r.status === "valid").length === 1 ? "" : "s"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

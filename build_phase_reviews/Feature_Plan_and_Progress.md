@@ -79,7 +79,7 @@ waiting on the user's file folder + naming-convention confirmation, per the plan
 
 ## Phase 4 — CSV bulk upload for order line items (item 5)
 
-**Status: Not Started**
+**Status: Done** (code-verified; not browser-verified, see Progress Log)
 
 | # | Task | Files |
 |---|------|-------|
@@ -96,6 +96,32 @@ Waiting on the user's 2 reference Excel files before any schema/design work star
 ## Progress Log
 
 _(Updated as work proceeds — most recent entry on top.)_
+
+### 2026-08-09 — Phase 4 implemented (CSV bulk upload for order line items)
+
+- Added a "Bulk Upload" button in `components/orders/new-order.tsx` alongside "Add from Catalog"/
+  "Custom Item", opening a `Dialog` modal.
+- "Download CSV Template" generates a `sku,quantity,material` CSV client-side (with one real
+  example row from the first catalog product, if any) via a `Blob`/`URL.createObjectURL`
+  download — no server round-trip.
+- File upload parses via the existing `parseCsv` (`lib/catalog/csv.ts`) — no new dependency.
+  Each row is validated against the `products` prop already passed into `NewOrder`: SKU must
+  match a catalog product, quantity must be a positive integer, and material (if given) must be
+  one of that product's offered materials (case-insensitive name match) — falls back to the
+  product's first material if the material column is left blank, matching `addCatalogLine`'s
+  own default. Results render as a preview table (SKU / Qty / Material / Status) with per-row
+  errors shown inline; nothing is added to the order until confirmed.
+- "Add N Items" pushes only the valid rows into `lines` state (same shape `addCatalogLine`
+  produces), leaving invalid rows for the user to fix and re-upload or skip. Modal close resets
+  the preview state so a stale table doesn't linger on next open.
+
+Verification: `npx tsc --noEmit` clean, full suite 205/205 passing (unchanged — no existing test
+file covers `new-order.tsx`), `npx eslint` clean. Completed with no issues, so per the user's
+instruction proceeding was authorized without a stop — but there is no further unblocked phase to
+continue into automatically: the only remaining item (compatibility matrix, item 6) still needs
+the user's 2 reference Excel files before any real design work can start, per `PRODUCT.md`'s own
+"don't fabricate data to fill gaps" principle. Not browser-verified — same standing blocker
+(no Supabase credential, no dev bypass) as every other phase.
 
 ### 2026-08-09 — Git sync: committed and pushed Phases 1-3, paused for review
 
