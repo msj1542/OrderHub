@@ -153,6 +153,11 @@ function CompanyEditor({ company, canPreview, enterPreviewAction }: {
           </div>
 
           <div>
+            <Label htmlFor="co-address">Address</Label>
+            <Textarea id="co-address" name="address" rows={2} defaultValue={company?.address ?? ""} placeholder="Street, city, state, ZIP…" />
+          </div>
+
+          <div>
             <Label htmlFor="co-billing">Billing notes</Label>
             <Textarea id="co-billing" name="billingNotes" rows={2} defaultValue={company?.billingNotes ?? ""} placeholder="Terms, PO requirements, invoicing contact…" />
           </div>

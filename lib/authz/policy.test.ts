@@ -37,6 +37,7 @@ function makeUser(
           primaryContactName: null,
           contactEmail:   null,
           contactPhone:   null,
+          address:        null,
           billingNotes:   null,
           createdAt:      new Date(),
           updatedAt:      new Date(),

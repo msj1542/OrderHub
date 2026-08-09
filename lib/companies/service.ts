@@ -24,7 +24,7 @@ export type CompanyUpdate = Partial<
   Pick<
     Company,
     | "name" | "orderScope" | "pricingVisible" | "notes" | "isActive"
-    | "primaryContactName" | "contactEmail" | "contactPhone" | "billingNotes"
+    | "primaryContactName" | "contactEmail" | "contactPhone" | "address" | "billingNotes"
   >
 >;
 

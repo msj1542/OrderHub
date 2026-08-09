@@ -24,6 +24,9 @@ type NavItem = {
   icon:   LucideIcon;
   exact?: boolean;
   badge?: number;
+  /** Extra path prefixes that should also count as "active" for this item
+   *  (e.g. external Team lives at /company-users, outside /settings). */
+  activePrefixes?: string[];
 };
 
 function buildNav(user: AppUser, badges?: { orders?: number; production?: number }): NavItem[] {
@@ -47,14 +50,16 @@ function buildNav(user: AppUser, badges?: { orders?: number; production?: number
     items.push({ label: "Resources", href: "/resources", icon: FolderOpen });
   }
 
-  if (can(user, "users:manage_external") && !user.role.isInternal) {
-    items.push({ label: "Team", href: "/company-users", icon: Users });
-  }
-
   items.push({ label: "Notifications", href: "/notifications", icon: Bell });
 
   if (can(user, "settings:manage")) {
     items.push({ label: "Settings", href: "/settings/companies", icon: Settings });
+  } else if (can(user, "users:manage_external") && !user.role.isInternal) {
+    // Company admins reach Team via Settings (Company/Team tabs) instead of
+    // a standalone sidebar link, matching how internal Team lives under
+    // internal Settings. Team itself still lives at /company-users, so it
+    // needs to count as "active" here too even though it's outside /settings.
+    items.push({ label: "Settings", href: "/settings/company", icon: Settings, activePrefixes: ["/settings", "/company-users"] });
   }
 
   return items;
@@ -115,8 +120,10 @@ export function Sidebar({ user, signOutAction, previewBanner, badges }: SidebarP
 
       {/* Nav */}
       <nav style={{ flex: 1, overflowY: "auto", padding: "var(--space-3) 0" }}>
-        {nav.map(({ label, href, icon: Icon, exact, badge }) => {
-          const active = exact ? pathname === href : pathname.startsWith(href);
+        {nav.map(({ label, href, icon: Icon, exact, badge, activePrefixes }) => {
+          const active = exact
+            ? pathname === href
+            : (activePrefixes ?? [href]).some((p) => pathname.startsWith(p));
           return (
             <Link
               key={href}

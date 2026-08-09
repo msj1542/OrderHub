@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, type ReactNode } from "react";
 import { Button }    from "@/components/ui/button";
 import { Input }     from "@/components/ui/input";
 import { Label }     from "@/components/ui/label";
@@ -213,7 +213,13 @@ function MaterialEditor({ material }: { material?: MaterialWithRolls }) {
               </span>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+            <div
+              style={{
+                display:             "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+                gap:                 "var(--space-4)",
+              }}
+            >
               {material.rolls.map((roll) => (
                 <RollEditor key={roll.id} roll={roll} />
               ))}
@@ -226,90 +232,68 @@ function MaterialEditor({ material }: { material?: MaterialWithRolls }) {
   );
 }
 
-// ── Roll editor row ───────────────────────────────────────────
+// ── Shared card bits ───────────────────────────────────────────
+
+function FieldGroupLabel({ children }: { children: ReactNode }) {
+  return (
+    <p
+      style={{
+        fontSize:      "var(--text-xs)",
+        color:         "var(--color-text-muted)",
+        textTransform: "uppercase",
+        letterSpacing: "0.06em",
+        fontWeight:    "var(--weight-semibold)",
+        margin:        "0 0 var(--space-2)",
+      }}
+    >
+      {children}
+    </p>
+  );
+}
+
+/** total cost ÷ roll area (sq ft) and ÷ roll length in linear inches. */
+function rollCostOutputs(widthIn: number, lengthFt: number, rollCost: number, handlingCost: number) {
+  const total = rollCost + handlingCost;
+  const areaSqFt = (widthIn / 12) * lengthFt;
+  const lengthIn = lengthFt * 12;
+  if (!total || !areaSqFt || !lengthIn) return null;
+  return { sqFt: (total / areaSqFt).toFixed(3), linIn: (total / lengthIn).toFixed(4) };
+}
+
+// ── Roll editor card ───────────────────────────────────────────
 
 function RollEditor({ roll }: { roll: MaterialRollWidth }) {
   const [state, action, pending] = useActionState(updateRollAction, {});
 
-  const sqFtCost = () => {
-    const area = (parseFloat(roll.widthIn) / 12) * parseFloat(roll.lengthFt);
-    const total = parseFloat(roll.rollCost) + parseFloat(roll.handlingCost);
-    if (!area || !total) return null;
-    return (total / area).toFixed(3);
-  };
+  const outputs = rollCostOutputs(
+    parseFloat(roll.widthIn), parseFloat(roll.lengthFt), parseFloat(roll.rollCost), parseFloat(roll.handlingCost),
+  );
 
   return (
     <form
       action={action}
       style={{
-        display:      "grid",
-        gridTemplateColumns: "auto auto auto auto 1fr auto",
-        gap:          "var(--space-3)",
-        alignItems:   "end",
-        padding:      "var(--space-3)",
-        background:   "var(--color-sunken)",
-        borderRadius: "var(--radius-md)",
-        border:       "1px solid var(--color-border-subtle)",
+        display:      "flex",
+        flexDirection: "column",
+        border:       "1px solid var(--color-border-default)",
+        borderRadius: "var(--radius-lg)",
+        overflow:     "hidden",
         opacity:      roll.isActive ? 1 : 0.6,
       }}
     >
       <input type="hidden" name="id" value={roll.id} />
 
-      <div>
-        <Label style={{ fontSize: "var(--text-xs)" }}>Width (in.)</Label>
-        <Input
-          name="widthIn"
-          type="number"
-          min="0.01"
-          step="0.01"
-          defaultValue={parseFloat(roll.widthIn).toString()}
-          style={{ width: 80 }}
-        />
-      </div>
-      <div>
-        <Label style={{ fontSize: "var(--text-xs)" }}>Length (ft.)</Label>
-        <Input
-          name="lengthFt"
-          type="number"
-          min="0.01"
-          step="0.01"
-          defaultValue={parseFloat(roll.lengthFt).toString()}
-          style={{ width: 80 }}
-        />
-      </div>
-      <div>
-        <Label style={{ fontSize: "var(--text-xs)" }}>Roll cost ($)</Label>
-        <Input
-          name="rollCost"
-          type="number"
-          min="0"
-          step="0.01"
-          defaultValue={parseFloat(roll.rollCost).toString()}
-          style={{ width: 90 }}
-        />
-      </div>
-      <div>
-        <Label style={{ fontSize: "var(--text-xs)" }}>Handling ($)</Label>
-        <Input
-          name="handlingCost"
-          type="number"
-          min="0"
-          step="0.01"
-          defaultValue={parseFloat(roll.handlingCost).toString()}
-          style={{ width: 90 }}
-        />
-      </div>
-      <div style={{ alignSelf: "center" }}>
-        {sqFtCost() && (
-          <small style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>
-            ${sqFtCost()}/sq ft
-          </small>
-        )}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)", alignItems: "flex-start" }}>
-        <Button type="submit" size="sm" variant="secondary" disabled={pending}>
-          {pending ? "…" : "Save"}
-        </Button>
+      <div
+        style={{
+          display:        "flex",
+          alignItems:     "center",
+          justifyContent: "space-between",
+          padding:        "var(--space-3) var(--space-4)",
+          background:     "var(--color-sunken)",
+          borderBottom:   "1px solid var(--color-border-subtle)",
+        }}
+      >
+        <strong style={{ fontSize: "var(--text-sm)" }}>{parseFloat(roll.widthIn)}″ roll</strong>
         <label style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", cursor: "pointer" }}>
           <input type="hidden"   name="isActive" value="false" />
           <input
@@ -325,16 +309,54 @@ function RollEditor({ roll }: { roll: MaterialRollWidth }) {
           <span style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>Active</span>
         </label>
       </div>
-      {state.error && (
-        <div style={{ gridColumn: "1 / -1" }}>
-          <Alert variant="danger">{state.error}</Alert>
+
+      <div style={{ padding: "var(--space-4)", display: "flex", flexDirection: "column", gap: "var(--space-4)", flex: 1 }}>
+        <div>
+          <FieldGroupLabel>Roll dimensions</FieldGroupLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
+            <div>
+              <Label style={{ fontSize: "var(--text-xs)" }}>Width (in.)</Label>
+              <Input name="widthIn" type="number" min="0.01" step="0.01" defaultValue={parseFloat(roll.widthIn).toString()} />
+            </div>
+            <div>
+              <Label style={{ fontSize: "var(--text-xs)" }}>Length (ft.)</Label>
+              <Input name="lengthFt" type="number" min="0.01" step="0.01" defaultValue={parseFloat(roll.lengthFt).toString()} />
+            </div>
+          </div>
         </div>
-      )}
+
+        <div>
+          <FieldGroupLabel>Cost</FieldGroupLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
+            <div>
+              <Label style={{ fontSize: "var(--text-xs)" }}>Roll cost ($)</Label>
+              <Input name="rollCost" type="number" min="0" step="0.01" defaultValue={parseFloat(roll.rollCost).toString()} />
+            </div>
+            <div>
+              <Label style={{ fontSize: "var(--text-xs)" }}>Handling ($)</Label>
+              <Input name="handlingCost" type="number" min="0" step="0.01" defaultValue={parseFloat(roll.handlingCost).toString()} />
+            </div>
+          </div>
+          {outputs && (
+            <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)", margin: "var(--space-2) 0 0" }}>
+              ${outputs.sqFt}/sq ft · ${outputs.linIn}/linear in.
+            </p>
+          )}
+        </div>
+
+        {state.error && <Alert variant="danger">{state.error}</Alert>}
+
+        <div style={{ marginTop: "auto" }}>
+          <Button type="submit" size="sm" variant="secondary" disabled={pending}>
+            {pending ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </div>
     </form>
   );
 }
 
-// ── Add roll form ─────────────────────────────────────────────
+// ── Add roll card ──────────────────────────────────────────────
 
 function AddRollForm({ materialId }: { materialId: string }) {
   const [state, action, pending] = useActionState(addRollAction, {});
@@ -343,43 +365,62 @@ function AddRollForm({ materialId }: { materialId: string }) {
     <form
       action={action}
       style={{
-        display:      "grid",
-        gridTemplateColumns: "auto auto auto auto 1fr auto",
-        gap:          "var(--space-3)",
-        alignItems:   "end",
-        padding:      "var(--space-3)",
-        background:   "var(--color-canvas)",
-        borderRadius: "var(--radius-md)",
-        border:       "1px dashed var(--color-border-default)",
+        display:       "flex",
+        flexDirection: "column",
+        border:        "1px dashed var(--color-border-default)",
+        borderRadius:  "var(--radius-lg)",
+        overflow:      "hidden",
       }}
     >
       <input type="hidden" name="materialId" value={materialId} />
 
-      <div>
-        <Label style={{ fontSize: "var(--text-xs)" }}>Width (in.)</Label>
-        <Input name="widthIn" type="number" min="0.01" step="0.01" required style={{ width: 80 }} />
+      <div
+        style={{
+          padding:      "var(--space-3) var(--space-4)",
+          background:   "var(--color-canvas)",
+          borderBottom: "1px dashed var(--color-border-default)",
+        }}
+      >
+        <strong style={{ fontSize: "var(--text-sm)", color: "var(--color-text-muted)" }}>New roll size</strong>
       </div>
-      <div>
-        <Label style={{ fontSize: "var(--text-xs)" }}>Length (ft.)</Label>
-        <Input name="lengthFt" type="number" min="0.01" step="0.01" defaultValue="100" required style={{ width: 80 }} />
-      </div>
-      <div>
-        <Label style={{ fontSize: "var(--text-xs)" }}>Roll cost ($)</Label>
-        <Input name="rollCost" type="number" min="0" step="0.01" defaultValue="0" required style={{ width: 90 }} />
-      </div>
-      <div>
-        <Label style={{ fontSize: "var(--text-xs)" }}>Handling ($)</Label>
-        <Input name="handlingCost" type="number" min="0" step="0.01" defaultValue="0" required style={{ width: 90 }} />
-      </div>
-      <div />
-      <Button type="submit" size="sm" variant="secondary" disabled={pending}>
-        {pending ? "Adding…" : "+ Add Roll Size"}
-      </Button>
-      {state.error && (
-        <div style={{ gridColumn: "1 / -1" }}>
-          <Alert variant="danger">{state.error}</Alert>
+
+      <div style={{ padding: "var(--space-4)", display: "flex", flexDirection: "column", gap: "var(--space-4)", flex: 1 }}>
+        <div>
+          <FieldGroupLabel>Roll dimensions</FieldGroupLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
+            <div>
+              <Label style={{ fontSize: "var(--text-xs)" }}>Width (in.)</Label>
+              <Input name="widthIn" type="number" min="0.01" step="0.01" required />
+            </div>
+            <div>
+              <Label style={{ fontSize: "var(--text-xs)" }}>Length (ft.)</Label>
+              <Input name="lengthFt" type="number" min="0.01" step="0.01" defaultValue="100" required />
+            </div>
+          </div>
         </div>
-      )}
+
+        <div>
+          <FieldGroupLabel>Cost</FieldGroupLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
+            <div>
+              <Label style={{ fontSize: "var(--text-xs)" }}>Roll cost ($)</Label>
+              <Input name="rollCost" type="number" min="0" step="0.01" defaultValue="0" required />
+            </div>
+            <div>
+              <Label style={{ fontSize: "var(--text-xs)" }}>Handling ($)</Label>
+              <Input name="handlingCost" type="number" min="0" step="0.01" defaultValue="0" required />
+            </div>
+          </div>
+        </div>
+
+        {state.error && <Alert variant="danger">{state.error}</Alert>}
+
+        <div style={{ marginTop: "auto" }}>
+          <Button type="submit" size="sm" variant="secondary" disabled={pending}>
+            {pending ? "Adding…" : "+ Add Roll Size"}
+          </Button>
+        </div>
+      </div>
     </form>
   );
 }

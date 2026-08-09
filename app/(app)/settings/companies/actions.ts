@@ -27,6 +27,7 @@ export async function saveCompanyAction(
     const primaryContactName  = (formData.get("primaryContactName") as string)?.trim();
     const contactEmail        = (formData.get("contactEmail") as string)?.trim();
     const contactPhone        = (formData.get("contactPhone") as string)?.trim();
+    const address              = (formData.get("address") as string)?.trim();
     const billingNotes        = (formData.get("billingNotes") as string)?.trim();
 
     if (!name) return { error: "Company name is required." };
@@ -38,6 +39,7 @@ export async function saveCompanyAction(
       primaryContactName: primaryContactName || null,
       contactEmail:       contactEmail || null,
       contactPhone:       contactPhone || null,
+      address:            address || null,
       billingNotes:       billingNotes || null,
     };
 

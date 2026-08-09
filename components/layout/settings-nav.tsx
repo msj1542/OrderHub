@@ -15,10 +15,21 @@ const SETTINGS_TABS = [
   { label: "Audit",      href: "/settings/audit",      action: "settings:manage" as const },
 ];
 
+// External company admins get a much smaller Settings area — their own
+// company's details plus the Team page (relocated here from its old
+// standalone sidebar link), mirroring how internal users have Team under
+// internal Settings.
+const EXTERNAL_SETTINGS_TABS = [
+  { label: "Company", href: "/settings/company" },
+  { label: "Team",    href: "/company-users" },
+];
+
 export function SettingsNav({ user }: { user: AppUser }) {
   const pathname = usePathname();
 
-  const tabs = SETTINGS_TABS.filter((t) => can(user, t.action));
+  const tabs = user.role.isInternal
+    ? SETTINGS_TABS.filter((t) => can(user, t.action))
+    : EXTERNAL_SETTINGS_TABS;
 
   return (
     <nav

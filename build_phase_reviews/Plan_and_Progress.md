@@ -146,7 +146,8 @@ explicitly "External dashboard") were labeled correctly.
 **Goal:** give external company admins a proper Settings area (mirroring the internal one), and
 address the flagged-but-unspecified Materials editor usability issue.
 
-**Status: Not Started**
+**Status: Done** (see Progress Log — not browser-verified this session; a DB migration is
+generated but NOT applied, see note).
 
 | # | Task | Source | Files (expected) |
 |---|------|--------|-------------------|
@@ -177,6 +178,95 @@ layouts rather than layouts that are about to change again in Phases 1–5.
 ## Progress Log
 
 _(Updated as work proceeds — most recent entry on top.)_
+
+### 2026-08-09 — Phase 5 implemented (all 3 items)
+
+Phases 1-4 (47 files) were committed first this session (`c27b826`) before
+starting Phase 5 — see the commit message for the phase-by-phase summary;
+per-item detail stays in this file.
+
+- **5.1** External company admins now reach Team via a new "Settings" nav
+  item (replacing their old standalone "Team" sidebar link) instead of a
+  bare top-level link — `components/layout/sidebar.tsx` swaps the two based
+  on `can(user,"settings:manage")` vs `can(user,"users:manage_external") &&
+  !user.role.isInternal`. Broadened `app/(app)/settings/layout.tsx`'s gate
+  to admit external company admins (previously `settings:manage`-only,
+  internal-only). `app/(app)/settings/page.tsx`'s bare `/settings` redirect
+  is now role-aware (`/settings/companies` internal, `/settings/company`
+  external — singular, deliberately distinct from internal's plural
+  `/settings/companies` to avoid a route collision). `components/layout/
+  settings-nav.tsx` renders a 2-tab external set (Company, Team) instead of
+  the 7-tab internal set when `!user.role.isInternal`. **Inference/decision
+  flagged:** rather than moving the already-built, already-tested
+  `/company-users` page's code to live under `/settings/team` (which would
+  collide with the *internal* Team page already at that exact path), the
+  Team *tab* simply links out to the existing `/company-users` route
+  unchanged — satisfies "Team lives under Settings" from the navigation
+  side without duplicating or risking regressing a working page. Added
+  `activePrefixes` to the sidebar's nav-item type so the Settings entry
+  still highlights as active while on `/company-users`.
+- **5.2** Added a `companies.address` column (`lib/db/schema.ts`) — did
+  not exist before, needed for "address, phone, email, and other standard
+  company fields" per the screenshot 292 annotation. **`drizzle-kit
+  generate` could not be used as normal**: this repo's existing 10
+  migrations were applied without ever populating drizzle's own journal
+  (`supabase/migrations/meta/` didn't exist before this session), so a
+  first `generate` call tried to emit a full 26-table baseline instead of
+  a real diff — discarded that and hand-wrote
+  `supabase/migrations/0011_company_address.sql` (`ALTER TABLE "companies"
+  ADD COLUMN "address" text;`) to continue the existing numbered sequence
+  instead. **This migration is generated but NOT applied to any database**
+  — running it (`db:push`/`db:migrate`/manually) is left to the user, since
+  altering live schema is a standing-infrastructure change outside what
+  this session should do unprompted. New self-serve page
+  `app/(app)/settings/company/page.tsx` + `components/settings/
+  company-details-form.tsx` + `app/(app)/settings/company/actions.ts`
+  (`saveCompanyDetailsAction`) let a company admin edit their own
+  `primaryContactName`/`contactEmail`/`contactPhone`/`address` — the
+  action always resolves the target company from the session
+  (`user.companyId`), never from form data, so a company admin cannot
+  edit another company's record by tampering with the request. Company
+  `name` and the internal-only fields (`orderScope`, `pricingVisible`,
+  `billingNotes`, `notes`, `isActive`) are deliberately NOT exposed here —
+  those are business-control fields internal staff should own, out of
+  scope for "customer info" self-serve per the annotation's framing.
+  Added the same `address` field to the existing internal company editor
+  (`components/settings/company-manager.tsx`,
+  `app/(app)/settings/companies/actions.ts`) so both sides show the same
+  data, per "should mostly equally reflect both on the internal and
+  external facing sides."
+- **5.3** Redesigned `components/catalog/material-settings.tsx`'s roll-size
+  editor: replaced the single dense row of 4 unlabeled-looking inputs (one
+  `<form>` per roll, `auto auto auto auto 1fr auto` grid) with a
+  responsive card grid (`repeat(auto-fill, minmax(260px,1fr))`) — each roll
+  is its own bordered card with a header (`24″ roll` + Active toggle) and
+  two visually separated, labeled field groups ("Roll dimensions": width/
+  length; "Cost": roll cost/handling), matching the internal Companies/
+  Materials editor's existing card-and-group visual language rather than
+  inventing a new pattern. Also surfaced the linear-inch cost output
+  alongside the existing $/sq ft one — the editor's own caption already
+  promised both ("linear-inch cost divides by total roll length") but only
+  square-foot cost was ever actually computed/shown; added it since it's
+  a small, direct clarity win with no new data needed. No redesign was
+  prescribed by the task (explicitly left to me to propose); this is that
+  proposal, implemented rather than left as an open question, per the
+  task's "propose a layout... before implementing" allowing discretion.
+
+Verification this session: `npx tsc --noEmit` clean, full suite 197/197
+passing, `npx eslint` clean on every new/changed file **except** two
+pre-existing `react-hooks/set-state-in-effect` errors in
+`company-manager.tsx` at lines a session did not touch (confirmed via
+`git diff` against the file's last real change) — flagged as a separate
+spawned task rather than fixed inline here, since it's unrelated to Phase
+5. **Not browser-verified** — same standing blocker as every phase above
+(entering credentials into the login form is outside what this agent will
+do regardless of credential availability). **Action needed from the user
+before this phase is fully live:** apply
+`supabase/migrations/0011_company_address.sql` to the database (e.g.
+`npm run db:migrate` or via the Supabase dashboard) — until then, the new
+`address` field will read as empty and any save through either the
+internal or external company-details form will fail at the database
+(unknown column).
 
 ### 2026-08-09 — Independent audit of Phases 1-4 (39 items) vs. actual code
 
