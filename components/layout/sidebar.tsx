@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Wrench,
   Layers,
+  Bike,
   FolderOpen,
   Users,
   Bell,
@@ -57,6 +58,7 @@ function buildNav(user: AppUser, badges?: { orders?: number; production?: number
 
   if (can(user, "catalog:view")) {
     items.push({ label: "Catalog", href: "/catalog", icon: Layers });
+    items.push({ label: "Compatibility", href: "/compatibility", icon: Bike });
   }
 
   if (can(user, "resources:download")) {

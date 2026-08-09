@@ -16,7 +16,7 @@ artifact outside the repo; this doc is the durable one):
 | 3 | Bulk-import the 152 catalog item files | Phase 3 |
 | 4 | Per-file visibility control (download / view-only / internal-only) | Phase 3 |
 | 5 | CSV bulk upload of order line items, from within the New Order form | Phase 4 |
-| 6 | Motorcycle↔kit compatibility matrix | Deferred — waiting on 2 reference Excel files |
+| 6 | Motorcycle↔kit compatibility matrix | Phase 5 |
 
 **Decisions confirmed with the user before starting:**
 - File delivery for item 3: user drops a folder into the project root (not a zip); exact
@@ -87,15 +87,85 @@ waiting on the user's file folder + naming-convention confirmation, per the plan
 | 4.2 | Parse via existing `parseCsv`, validate SKU/material/quantity against `products` prop, show per-row error preview | `components/orders/new-order.tsx`, reuses `lib/catalog/csv.ts` |
 | 4.3 | Commit valid rows into `lines` state on confirm | `components/orders/new-order.tsx` |
 
-## Deferred — Compatibility matrix (item 6)
+## Phase 5 — Motorcycle ↔ kit compatibility matrix (item 6)
 
-Waiting on the user's 2 reference Excel files before any schema/design work starts.
+**Status: Done** (code-verified + DB-verified against this session's connected dev database;
+not browser-verified, see Progress Log)
+
+| # | Task | Files |
+|---|------|-------|
+| 5.1 | Extract fitment data (read-only) from `Kit Compatibility.xlsx`'s "Kit Compatability" tab | `data/vehicle-models.csv`, `data/kit-vehicle-fitments.csv` |
+| 5.2 | Add `vehicle_models` + `product_vehicle_fitments` schema + migration | `lib/db/schema.ts`, `supabase/migrations/0013_vehicle_fitments.sql` |
+| 5.3 | Write + run the (idempotent) import script | `scripts/import-vehicle-fitments.mjs` |
+| 5.4 | Service layer (single fetch, client-side grouping) | `lib/compatibility/service.ts` |
+| 5.5 | Page + two-tab browse UI (By Motorcycle / By Kit) + nav entry | `app/(app)/compatibility/page.tsx`, `components/compatibility/compatibility-browse.tsx`, `components/layout/sidebar.tsx` |
 
 ---
 
 ## Progress Log
 
 _(Updated as work proceeds — most recent entry on top.)_
+
+### 2026-08-09 — Phase 5 implemented (compatibility matrix)
+
+The user corrected item 6's scope: one workbook (`Kit Compatibility.xlsx`, at
+`P:\Manufacturing\Hog Skins\Admin\Reference Materials\`), not two — two chart tabs
+("Kit Compatability", "Kit by Model") plus 3 raw Power Query/PowerPivot tabs (`skuList`,
+`bikeList`, `skuBikeJoin`). Read the full workbook read-only (openpyxl via the `xlsx` skill) and
+cross-referenced every tab against the live database before designing anything.
+
+**Key finding:** the app's `products` table cannot represent real vehicle fitment — every one of
+the 38 seeded products has `model = "Generic"` in the DB, a placeholder. Real fitment is
+genuinely many-to-many (e.g. `HD-CS-15` fits both a 2014+ Street Glide and a 2015+ Road Glide),
+which a single `model`/`yearStart` column can't express. New schema was required, not a query
+over existing columns — confirmed via plan-mode research before writing any code.
+
+**Second finding, during extraction:** the raw `skuBikeJoin`/`bikeList` tabs are stale relative
+to the "Kit Compatability" pivot tab — cross-checking SKU sets showed `skuBikeJoin` missing 15 of
+the DB's real 38 SKUs while also containing several not-yet-cataloged future SKUs (e.g.
+`HD-LF-24`, `HD-WT-25`). The "Kit Compatability" tab's SKU set matches the live DB's 38 products
+**exactly**, and cross-validated consistently against the "Kit by Model" tab (spot-checked Road
+Glide 2015's row against every SKU my extraction attributed to that vehicle model — full match).
+Switched the extraction source to that tab (parsing its merged-cell column headers for
+brand/model/year, X-marks for fitment) rather than the raw join tables the original plan draft
+assumed — noted as a revision, not a silent change, since it affects what data actually loads.
+
+- **5.1** Extracted (read-only, via a scratch Python script — not committed, one-time use) into
+  `data/vehicle-models.csv` (14 rows) and `data/kit-vehicle-fitments.csv` (70 rows) — checked into
+  the repo since the source `.xlsx` lives on a local network path (`P:\...`) not portable to any
+  other environment, matching the existing `data/product-catalog.csv` convention.
+- **5.2** Added `vehicleModels` (brand/model/yearStart) and `productVehicleFitments`
+  (product↔vehicleModel join, unique pair) to `lib/db/schema.ts` + migration `0013`, applied to
+  this session's connected dev DB the same way as `0012` (direct `postgres` connection, not
+  drizzle-kit — still broken for this repo per the prior revision pass's notes). RLS mirrors the
+  existing `product_materials` pattern: service-role bypass + `select_authenticated USING(true)`,
+  since the actual visibility gate already lives on `products` itself.
+- **5.3** `scripts/import-vehicle-fitments.mjs` (modeled on `scripts/seed-catalog.mjs`) — upserts
+  vehicle models by (brand, model, yearStart), inserts fitments with `ON CONFLICT DO NOTHING`.
+  Ran twice against the dev DB to confirm idempotency: first run inserted 14 models / 70 fitments
+  with 0 skipped; second run found all 14/70 already present, 0 skipped — matches every one of
+  the 38 fitment-CSV SKUs to a real `products` row (0 unmatched, unlike the abandoned
+  skuBikeJoin-based extraction which had left several future SKUs unmatched).
+- **5.4/5.5** `lib/compatibility/service.ts` fetches vehicle models + visible products + fitments
+  in one shot (dataset is small — 14/38/70 rows — so grouping/filtering happens client-side
+  rather than a server round-trip per filter change). New `/compatibility` page + sidebar entry
+  (gated on `catalog:view`, same as Catalog — both internal and external users get it), with two
+  tabs: **By Motorcycle** (cascading Brand→Model→Year selects, result table grouped by part name)
+  and **By Kit** (searchable list reusing the existing `DataTable`/`catalog-browse.tsx` pattern,
+  each kit's fitments shown as badges, expandable for full description).
+
+Verification: `npx tsc --noEmit` clean, full suite 205/205 passing (unchanged — no test file
+covers this new surface), `npx eslint` clean (fixed one `react-hooks/exhaustive-deps` warning by
+inlining the derived array into the `useMemo` callback rather than suppressing it). Ran a direct
+query against the dev DB matching the service's exact query shape (14 models, 38 external-visible
+products, 70 fitments) to sanity-check beyond what `tsc` alone proves. **Not browser-verified**
+— same standing blocker as every other phase (no Supabase credential, no dev bypass). Recommend a
+manual pass over: `/compatibility` on both tabs, especially the Brand→Model→Year cascade
+resetting correctly on brand change, and the By Kit search filter.
+
+**This closes out all 6 original items** (items 1-5 fully complete; item 6/Phase 5 complete —
+Harley Davidson only, since that's the only brand in the source data; the picker stays
+brand-first so a future non-Harley brand needs no UI rework, just more imported data).
 
 ### 2026-08-09 — Phase 4 implemented (CSV bulk upload for order line items)
 

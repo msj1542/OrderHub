@@ -457,6 +457,29 @@ export const resourceVersions = pgTable("resource_versions", {
   createdAt:  timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
 });
 
+/**
+ * Vehicle fitment (compatibility matrix). A single kit SKU can fit multiple
+ * vehicle model/years, and a single model/year draws from multiple SKUs —
+ * genuinely many-to-many, which is why this can't be expressed by
+ * products.brand/model/yearStart (those describe one representative
+ * fitment per product row, not the full compatibility set). Source: the
+ * "Kit Compatability" tab of the user-provided Kit Compatibility.xlsx,
+ * imported via scripts/import-vehicle-fitments.mjs.
+ */
+export const vehicleModels = pgTable("vehicle_models", {
+  id:        uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  brand:     text("brand").notNull(),
+  model:     text("model").notNull(),
+  yearStart: text("year_start"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const productVehicleFitments = pgTable("product_vehicle_fitments", {
+  id:             uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  productId:      uuid("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  vehicleModelId: uuid("vehicle_model_id").notNull().references(() => vehicleModels.id, { onDelete: "cascade" }),
+});
+
 // ── Phase 6 relations ───────────────────────────────────────────
 
 export const notificationsRelations = relations(notifications, ({ one, many }) => ({
@@ -484,6 +507,15 @@ export const resourcesRelations = relations(resources, ({ one, many }) => ({
 export const resourceVersionsRelations = relations(resourceVersions, ({ one }) => ({
   resource:   one(resources, { fields: [resourceVersions.resourceId], references: [resources.id] }),
   uploadedBy: one(users,     { fields: [resourceVersions.uploadedBy], references: [users.id]      }),
+}));
+
+export const vehicleModelsRelations = relations(vehicleModels, ({ many }) => ({
+  fitments: many(productVehicleFitments),
+}));
+
+export const productVehicleFitmentsRelations = relations(productVehicleFitments, ({ one }) => ({
+  product:      one(products,      { fields: [productVehicleFitments.productId],      references: [products.id]      }),
+  vehicleModel: one(vehicleModels, { fields: [productVehicleFitments.vehicleModelId], references: [vehicleModels.id] }),
 }));
 
 // ── TypeScript types ──────────────────────────────────────────
@@ -668,6 +700,11 @@ export type ResourceVersion  = typeof resourceVersions.$inferSelect;
 export type NewResourceCategory = typeof resourceCategories.$inferInsert;
 export type NewResource         = typeof resources.$inferInsert;
 export type NewResourceVersion  = typeof resourceVersions.$inferInsert;
+
+export type VehicleModel           = typeof vehicleModels.$inferSelect;
+export type ProductVehicleFitment  = typeof productVehicleFitments.$inferSelect;
+export type NewVehicleModel        = typeof vehicleModels.$inferInsert;
+export type NewProductVehicleFitment = typeof productVehicleFitments.$inferInsert;
 
 /** Resource with its category name and current (latest) version file info. */
 export type ResourceWithVersion = Resource & {
