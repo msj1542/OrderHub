@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useActionState } from "react";
+import { useState, useActionState } from "react";
 import { Eye } from "lucide-react";
 import { Button }    from "@/components/ui/button";
 import { Input }     from "@/components/ui/input";
@@ -89,17 +89,26 @@ function CompanyEditor({ company, canPreview, enterPreviewAction }: {
   const [state, action, pending] = useActionState(saveCompanyAction, {});
   const [formKey, setFormKey] = useState(0);
 
-  useEffect(() => {
+  // Bump the remount key when a save just succeeded, so the form clears —
+  // adjusted during render (not in an effect) per
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-state-when-a-prop-changes,
+  // which avoids the extra commit a useEffect-based version would cause.
+  const [prevSaveSuccess, setPrevSaveSuccess] = useState(state.success);
+  if (state.success !== prevSaveSuccess) {
+    setPrevSaveSuccess(state.success);
     if (state.success) setFormKey((k) => k + 1);
-  }, [state.success]);
+  }
+
   const [previewRole, setPreviewRole] = useState<string>(PREVIEW_ROLES[0]);
   const [previewPending, setPreviewPending] = useState(false);
 
   const [inviteState, inviteAction, invitePending] = useActionState(inviteExternalAdminAction, {});
   const [inviteFormKey, setInviteFormKey] = useState(0);
-  useEffect(() => {
+  const [prevInviteSuccess, setPrevInviteSuccess] = useState(inviteState.success);
+  if (inviteState.success !== prevInviteSuccess) {
+    setPrevInviteSuccess(inviteState.success);
     if (inviteState.success) setInviteFormKey((k) => k + 1);
-  }, [inviteState.success]);
+  }
 
   return (
     <section style={{ background: "var(--color-panel)", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-lg)", overflow: "hidden" }}>
