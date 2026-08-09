@@ -37,3 +37,11 @@ next-env.d.ts
 
 # drizzle
 drizzle/
+
+# personal/per-machine Claude Code settings (contains local absolute paths)
+.claude/settings.local.json
+
+# revision-pass source material — annotated screenshots kept locally for
+# reference only, already distilled into build_phase_reviews/Plan_and_Progress.md
+build_phase_reviews/Revisions.zip
+build_phase_reviews/extracted/

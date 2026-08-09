@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-08T00:00:00Z",
+  "title": "Design System: OrderHub",
+  "extensions": {
+    "colorMeta": {
+      "brand": {
+        "role": "primary",
+        "displayName": "Steel Blue",
+        "canonical": "#3575b0",
+        "tonalRamp": ["#f0f5fb", "#dce9f5", "#b5cfea", "#82aed6", "#5490c3", "#3575b0", "#2a5e8e", "#20496e", "#183657", "#112643"]
+      },
+      "accent": {
+        "role": "secondary",
+        "displayName": "Amber",
+        "canonical": "#c98b0e",
+        "tonalRamp": ["#fdf4e3", "#f9e2b1", "#e8a822", "#c98b0e", "#a06d06"]
+      },
+      "text-primary": {
+        "role": "neutral",
+        "displayName": "Cool Grey",
+        "canonical": "#16202c",
+        "tonalRamp": ["#f7f8fa", "#eef0f3", "#dde1e7", "#c4cad4", "#9ba5b3", "#647080", "#505c6e", "#38424f", "#252d38", "#16202c"]
+      },
+      "status-info-text": { "role": "info", "displayName": "Info Blue", "canonical": "#20496e" },
+      "status-success-text": { "role": "success", "displayName": "Success Green", "canonical": "#1e6b40" },
+      "status-warning-text": { "role": "warning", "displayName": "Warning Amber", "canonical": "#7a5200" },
+      "status-danger-text": { "role": "danger", "displayName": "Danger Red", "canonical": "#8b1a14" },
+      "status-urgent-text": { "role": "urgent", "displayName": "Urgent Magenta", "canonical": "#6b1466" },
+      "status-completed-text": { "role": "completed", "displayName": "Completed Purple", "canonical": "#3d2e8c" }
+    },
+    "typographyMeta": {
+      "title": { "displayName": "Title", "purpose": "Page-level h1, e.g. dashboard greeting, workspace headers." },
+      "section": { "displayName": "Section", "purpose": "Dialog titles, panel/card headers." },
+      "body": { "displayName": "Body", "purpose": "Default running UI text; the base font size for the whole app." },
+      "label": { "displayName": "Label", "purpose": "Uppercase micro-labels: table column headers, small captions." }
+    },
+    "shadows": [
+      { "name": "sm", "value": "0 1px 2px 0 rgb(0 0 0 / 0.05)", "purpose": "Resting elevation for cards/panels on the canvas." },
+      { "name": "md", "value": "0 2px 6px 0 rgb(0 0 0 / 0.08), 0 1px 2px 0 rgb(0 0 0 / 0.04)", "purpose": "Hover elevation for cards; resting elevation for floating layers (dropdowns, popovers, avatar menu)." },
+      { "name": "lg", "value": "0 8px 24px 0 rgb(0 0 0 / 0.10), 0 2px 6px 0 rgb(0 0 0 / 0.06)", "purpose": "Modal/dialog content only — the system's single highest elevation." }
+    ],
+    "motion": [
+      { "name": "state-transition", "value": "color/background/shadow 0.1s–0.2s ease", "purpose": "Default hover/press transition for nav items, buttons, rows." },
+      { "name": "overlay-enter-exit", "value": "Radix data-state fade + zoom-95 + slide, 200ms", "purpose": "Dialog and Select open/close animation." }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Default call-to-action button.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Save changes</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 16px; border-radius: 8px; font-weight: 550; font-size: 13px; border: none; cursor: pointer; transition: background 0.15s, color 0.15s; } .ds-btn-primary { background: #3575b0; color: #ffffff; } .ds-btn-primary:hover { background: #2a5e8e; } .ds-btn-primary:focus-visible { outline: 2px solid #3575b0; outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Secondary/neutral action button.",
+      "html": "<button class=\"ds-btn ds-btn-secondary\">Cancel</button>",
+      "css": ".ds-btn-secondary { background: #ffffff; color: #16202c; border: 1px solid #dde1e7; height: 36px; padding: 0 16px; border-radius: 8px; font-weight: 550; font-size: 13px; cursor: pointer; transition: background 0.15s; } .ds-btn-secondary:hover { background: #eef0f3; }"
+    },
+    {
+      "name": "Status Pill",
+      "kind": "chip",
+      "refersTo": "status-pill",
+      "description": "Signature component — the single source of truth for order/work-order status color, keyed off a closed 7-family vocabulary.",
+      "html": "<span class=\"ds-status-pill ds-status-info\">In Fulfillment</span>",
+      "css": ".ds-status-pill { display: inline-flex; align-items: center; border-radius: 9999px; border-width: 1px; border-style: solid; padding: 2px 8px; font-size: 11px; font-weight: 550; } .ds-status-neutral { background: #eef0f3; border-color: #dde1e7; color: #38424f; } .ds-status-info { background: #e8f1fb; border-color: #b5cfea; color: #20496e; } .ds-status-success { background: #e8f7ee; border-color: #a3d9b6; color: #1e6b40; } .ds-status-warning { background: #fdf4e3; border-color: #f9e2b1; color: #7a5200; } .ds-status-danger { background: #fdecea; border-color: #f5b8b3; color: #8b1a14; } .ds-status-urgent { background: #fce8fb; border-color: #e6b0e3; color: #6b1466; } .ds-status-completed { background: #eeebf8; border-color: #ccc4ee; color: #3d2e8c; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Default form text field.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Search catalog…\" />",
+      "css": ".ds-input { height: 36px; width: 100%; border-radius: 8px; border: 1px solid #dde1e7; background: #ffffff; padding: 4px 12px; font-size: 13px; color: #16202c; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); } .ds-input::placeholder { color: #647080; } .ds-input:focus-visible { outline: none; box-shadow: 0 0 0 1px #3575b0; }"
+    },
+    {
+      "name": "Stat Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Dashboard summary card; flat at rest, raises on hover.",
+      "html": "<div class=\"ds-card\"><span class=\"ds-card-value\">12</span><span class=\"ds-card-label\">Awaiting Acceptance</span></div>",
+      "css": ".ds-card { display: flex; flex-direction: column; gap: 4px; padding: 16px; border-radius: 12px; border: 1px solid #eef0f3; background: #ffffff; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); transition: box-shadow 0.15s; } .ds-card:hover { box-shadow: 0 2px 6px 0 rgb(0 0 0 / 0.08), 0 1px 2px 0 rgb(0 0 0 / 0.04); } .ds-card-value { font-size: 29px; font-weight: 800; color: #16202c; } .ds-card-label { font-size: 13px; color: #647080; }"
+    },
+    {
+      "name": "Checkbox",
+      "kind": "input",
+      "refersTo": "checkbox",
+      "description": "List-item and attestation checkbox (distinct from settings Toggle).",
+      "html": "<span class=\"ds-checkbox ds-checkbox-checked\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\"><polyline points=\"20 6 9 17 4 12\"/></svg></span>",
+      "css": ".ds-checkbox { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 6px; border: 1px solid #c4cad4; } .ds-checkbox-checked { background: #3575b0; border-color: #3575b0; color: #ffffff; }"
+    },
+    {
+      "name": "Tab",
+      "kind": "nav",
+      "refersTo": "tabs",
+      "description": "Underline-style tab, active state in brand blue.",
+      "html": "<div class=\"ds-tabs\"><button class=\"ds-tab ds-tab-active\">Current Work</button><button class=\"ds-tab\">Completed</button></div>",
+      "css": ".ds-tabs { display: inline-flex; width: 100%; align-items: center; border-bottom: 1px solid #dde1e7; } .ds-tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 6px 12px; font-size: 13px; font-weight: 550; color: #647080; cursor: pointer; margin-bottom: -1px; } .ds-tab:hover { color: #16202c; } .ds-tab-active { border-bottom-color: #3575b0; color: #3575b0; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Steel & Amber Ledger",
+    "overview": "OrderHub reads like an accounting-grade ledger for a manufacturing floor: every order is a line to be tracked, matched, and reconciled as it moves from submission through cutting, QC, invoicing, and release. Steel-blue and cool-grey carry the structural weight — panels, borders, body text — while a single warm amber accent marks what currently needs a human's attention (an overdue stat, an expedited order, a hover state). The system stays flat and quiet at rest; elevation only appears as a response to interaction (hover, an open dropdown, a modal), never as decoration. Status is color-coded through one small, closed vocabulary of seven pill-shaped families reused everywhere rather than invented per screen. This is an Operate-mode surface: internal coordinators, production staff, and accounting live in it for hours, and external customers use it to place and track orders. Scanability and consistency outrank expression; personality lives in small, precise details rather than in bold color or motion.",
+    "keyCharacteristics": [
+      "Flat by default; shadow is a state response, not a resting decoration.",
+      "One closed status-color vocabulary (7 families) reused for every badge, pill, and row accent — never a one-off color pairing.",
+      "Amber is rare and load-bearing: it always means \"this needs attention,\" never decoration.",
+      "Dense, left-aligned data (tables, stat rows, list rows) over illustrative or marketing-style layout.",
+      "No custom display typeface — the system typeface stack throughout, differentiated by weight and size, not by font family."
+    ],
+    "rules": [
+      { "name": "The One Warm Voice Rule", "body": "Amber is the system's only warm color and its only \"look here\" signal. It never shares a screen role with a structural color.", "section": "colors" },
+      { "name": "The Closed Status Palette Rule", "body": "Every status indicator maps through exactly seven named families — neutral · info · success · warning · danger · urgent · completed — each with a fixed bg/border/text triplet, light and dark. A new status must be assigned to one of these seven, never given a bespoke pair.", "section": "colors" },
+      { "name": "The Weight-Not-Family Rule", "body": "Every level of hierarchy is expressed by resizing/reweighting one typeface, never by switching families.", "section": "typography" },
+      { "name": "The Elevation-As-Response Rule", "body": "A surface's shadow level should describe why it's raised (floating over content vs. blocking all content), not how important it is.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do route every status indicator through the 7-family status vocabulary — never hardcode a one-off status color.",
+      "Do keep amber exclusively for \"needs attention\" signals; if a new element is purely structural, use blue/grey.",
+      "Do use shadow-sm → shadow-md as the resting → hover pattern for cards, and reserve shadow-lg for modal-level content only.",
+      "Do use the pill radius only for badges, avatars, and count bubbles — buttons and inputs stay at radius-md."
+    ],
+    "donts": [
+      "Don't introduce a second typeface or a decorative display font — hierarchy comes from weight/size on the one system stack.",
+      "Don't treat this palette as final. It is a working placeholder and the product owner has explicitly not committed to it — expect a dedicated redesign pass.",
+      "Don't add shadow to static, non-interactive, non-layered content — it breaks the flat-by-default read established throughout the shell.",
+      "Don't reuse danger (red) for expedited/urgent orders, or vice versa — they are deliberately separate families."
+    ]
+  }
+}
