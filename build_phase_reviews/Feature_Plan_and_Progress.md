@@ -226,6 +226,20 @@ uses elsewhere in the app for this exact class of problem, rather than inventing
 Verified live at 375px width: Operations/Audit were previously unreachable, now scroll into view
 and are clickable. `npx tsc --noEmit` clean, full suite still 206/206, `npx eslint` clean.
 
+**Revised per user feedback** ("not sure I love that new UI update") — a bare `overflow-x: auto`
+technically worked but had two real gaps: (1) landing directly on a scrolled-off tab (e.g. a
+deep link to Audit) left it selected but invisible, with no cue to scroll; (2) no visual
+affordance signaled the row was scrollable at all before the first touch. Used the `impeccable`
+`adapt` playbook (adaptation should rethink the interaction, not just prevent clipping) to fix
+both: the active tab now auto-scrolls into view via `scrollIntoView` on mount/route change, and
+scroll-position-tracked edge-fade gradients (`--color-canvas` fading to transparent, shown only
+on the side that actually has more content) hint at overflow before the user touches it. Kept
+the existing global thin scrollbar (`app/globals.css`) rather than hiding it — already minimal
+and consistent with the flat/quiet design language, no reason to remove a working discoverability
+cue. Verified live: direct navigation to `/settings/audit` at 375px now auto-scrolls Audit into
+view with a left-edge fade correctly indicating more tabs behind it. `npx tsc --noEmit` clean,
+full suite 206/206, `npx eslint` clean, impeccable's mechanical detector clean (zero findings).
+
 ### 2026-08-09 — Phase 4 implemented (CSV bulk upload for order line items)
 
 - Added a "Bulk Upload" button in `components/orders/new-order.tsx` alongside "Add from Catalog"/
