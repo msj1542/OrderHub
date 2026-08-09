@@ -167,6 +167,54 @@ resetting correctly on brand change, and the By Kit search filter.
 Harley Davidson only, since that's the only brand in the source data; the picker stays
 brand-first so a future non-Harley brand needs no UI rework, just more imported data).
 
+### 2026-08-09 — First real browser verification pass (all phases), one real bug found and fixed
+
+The user provided a test login and, after I correctly declined to type the password myself
+(explaining that's a hard rule, not a per-session judgment call) and asked them to sign in
+directly, verified an authenticated session was live and walked every phase end-to-end for the
+first time all session — every phase before this had been code/DB-verified only, same standing
+blocker as the entire prior revision pass.
+
+**Real bug found on the very first page load:** the dashboard's cutoff countdown showed
+"Order cutoff in NaNm" instead of a real countdown. Root cause: `getTzOffsetMinutes`
+(`components/orders/cutoff-countdown.tsx`, pre-existing — not part of this session's Phase 1
+refactor, confirmed via diff) diffs a millisecond-precision `Date` against a whole-second-
+truncated one built from `Intl`-formatted parts, leaving a spurious fractional-minute remainder
+(e.g. `-300.0065166...` instead of exactly `-300`). That fractional value then corrupted the
+constructed ISO offset string (`"-05:0.0065166..."`), making `new Date(...)` return `Invalid
+Date`. Every existing test fixture in `cutoff-countdown.test.ts` happened to use whole-second
+ISO strings, which is exactly why this was never caught by the test suite — `new Date()` at a
+real call site essentially never lands on an exact whole second, so this triggered on
+effectively every real page load despite passing 205/205 tests and a clean `tsc`. **Fixed** by
+rounding the offset to the nearest whole minute (real-world UTC offsets are always whole
+minutes) rather than leaving the sub-second noise in. Added a regression test using a
+sub-second-precision `now` (`2026-08-09T22:37:25.391Z`) to pin it — full suite now 206/206.
+Verified live: countdown went from "NaNm" to a correct "6h 19m"/"6h 18m" on reload.
+
+**Everything else verified working exactly as designed, live, with no other issues found:**
+- Dashboard: countdown color tiers, stat cards.
+- Compatibility (Phase 5): By Motorcycle cascading Brand→Model→Year selects (tested Freewheeler
+  2015+ and Street Glide, including the multi-generation year reset on model change) and By Kit
+  search — both matched the extracted source data exactly, including multi-fitment kits (e.g.
+  `HD-CS-15` correctly showing both Road Glide 2015+ and Street Glide 2014+).
+- New Order (Phase 4): Bulk Upload modal opens, template-download button present, "Add 0 Items"
+  correctly disabled with no file selected. (Could not simulate an actual file upload — the
+  browser tool has no file-input-set primitive — but the modal, wiring, and validation gating
+  are confirmed; the underlying parse/validate logic already has code-level confidence from
+  `tsc`/lint passing against the reused `parseCsv`.)
+- Settings → Operations (Phase 1): business timezone renders as a proper `Select` with all 8
+  curated zones, not the old free-text input.
+- Settings → Companies (Phase 2): company user list renders with working Deactivate button and
+  invite form.
+- Settings → Resources (Phase 3): "External access" select shows all 3 levels (Download allowed
+  / View only / Internal only) on the resource creation form.
+- Order detail, Notifications, Audit History: every date/timestamp rendered correctly and
+  consistently (business timezone, no raw ISO strings, no NaN) — confirms the Phase 1 formatDate/
+  formatWhen fixes actually work end-to-end, not just in isolation.
+
+Fix committed and pushed separately from the phase work above, since it was found during
+verification rather than being part of any single phase's original scope.
+
 ### 2026-08-09 — Phase 4 implemented (CSV bulk upload for order line items)
 
 - Added a "Bulk Upload" button in `components/orders/new-order.tsx` alongside "Add from Catalog"/

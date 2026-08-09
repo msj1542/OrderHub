@@ -25,7 +25,13 @@ function getTzOffsetMinutes(date: Date, tz: string): number {
   }).formatToParts(date);
   const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
   const asUTC = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
-  return (asUTC - date.getTime()) / 60000;
+  // Real-world UTC offsets are always whole minutes, but `date` carries
+  // sub-second precision (milliseconds) that `asUTC` — built from
+  // whole-second Intl parts — can't represent, leaving a spurious fractional
+  // remainder in the raw division. Round it away rather than let it corrupt
+  // the ISO string built from this value (a stray "0.006516..." minutes
+  // segment makes `new Date(...)` return Invalid Date).
+  return Math.round((asUTC - date.getTime()) / 60000);
 }
 
 type Props = {

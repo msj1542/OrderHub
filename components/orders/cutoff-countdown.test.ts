@@ -50,4 +50,19 @@ describe("getNextCutoff", () => {
     const target = getNextCutoff("Monday", "17:00", "America/Chicago", now);
     expect(target.toISOString()).toBe("2026-08-17T22:00:00.000Z");
   });
+
+  it("stays valid when `now` carries sub-second precision, as it always does from `new Date()`", () => {
+    // Regression: every fixture above uses a whole-second ISO string, which
+    // hid a real bug — getTzOffsetMinutes diffed a millisecond-precision
+    // instant against a whole-second-truncated one, leaving a fractional
+    // remainder (e.g. -300.0065166... instead of exactly -300) that
+    // corrupted the constructed offset string ("-05:0.0065166...") into
+    // Invalid Date. Live-reproduced on the dashboard: the countdown showed
+    // "NaNm" on every real page load, since `new Date()` essentially never
+    // lands on an exact whole second.
+    const now = new Date("2026-08-09T22:37:25.391Z");
+    const target = getNextCutoff("Monday", "00:00", "America/Chicago", now);
+    expect(Number.isNaN(target.getTime())).toBe(false);
+    expect(target.toISOString()).toBe("2026-08-10T05:00:00.000Z");
+  });
 });
