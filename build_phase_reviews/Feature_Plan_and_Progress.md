@@ -215,6 +215,17 @@ Verified live: countdown went from "NaNm" to a correct "6h 19m"/"6h 18m" on relo
 Fix committed and pushed separately from the phase work above, since it was found during
 verification rather than being part of any single phase's original scope.
 
+**Second bug found, via the user's own inspector selection:** `components/layout/settings-nav.tsx`
+(the Companies/Team/Catalog/Materials/Resources/Operations/Audit tab row) had no responsive
+handling at all — `display: flex` + `whiteSpace: nowrap` per tab with no `overflow-x` on the
+container, so at narrow widths (7 tabs for internal admins) the later tabs were clipped off
+entirely rather than reachable by scrolling. Not something this session's Phase 1-5 work touched;
+pre-existing, caught live. Fixed by adding `overflowX: "auto"` (+ `WebkitOverflowScrolling:
+"touch"`, `flexShrink: 0` on each tab) to the nav container — same pattern `DataTable` already
+uses elsewhere in the app for this exact class of problem, rather than inventing a new one.
+Verified live at 375px width: Operations/Audit were previously unreachable, now scroll into view
+and are clickable. `npx tsc --noEmit` clean, full suite still 206/206, `npx eslint` clean.
+
 ### 2026-08-09 — Phase 4 implemented (CSV bulk upload for order line items)
 
 - Added a "Bulk Upload" button in `components/orders/new-order.tsx` alongside "Add from Catalog"/

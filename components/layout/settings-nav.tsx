@@ -40,6 +40,11 @@ export function SettingsNav({ user }: { user: AppUser }) {
         gap:        "var(--space-1)",
         borderBottom: "1px solid var(--color-border-default)",
         marginBottom: "var(--space-4)",
+        overflowX:  "auto",
+        // Narrow viewports can't fit every tab (7 for internal admins) —
+        // scroll horizontally instead of clipping the overflow, matching
+        // how DataTable handles the same problem elsewhere in the app.
+        WebkitOverflowScrolling: "touch",
       }}
     >
       {tabs.map((tab) => {
@@ -59,6 +64,7 @@ export function SettingsNav({ user }: { user: AppUser }) {
               marginBottom: -1,
               textDecoration: "none",
               whiteSpace:   "nowrap",
+              flexShrink:   0,
               transition:   "color 0.1s, border-color 0.1s",
             }}
           >
