@@ -26,6 +26,16 @@ describe("validateOperationsSettings", () => {
     expect(validateOperationsSettings({ ...base, businessTimezone: "" })).toMatch(/timezone/i);
   });
 
+  it("rejects a non-IANA timezone name", () => {
+    expect(validateOperationsSettings({ ...base, businessTimezone: "CST" })).toMatch(/timezone/i);
+    expect(validateOperationsSettings({ ...base, businessTimezone: "Central Time" })).toMatch(/timezone/i);
+  });
+
+  it("accepts other valid IANA timezone names", () => {
+    expect(validateOperationsSettings({ ...base, businessTimezone: "America/New_York" })).toBeNull();
+    expect(validateOperationsSettings({ ...base, businessTimezone: "UTC" })).toBeNull();
+  });
+
   it("rejects an invalid rush fee mode", () => {
     expect(validateOperationsSettings({ ...base, rushFeeMode: "bogus" })).toMatch(/rush fee mode/i);
   });

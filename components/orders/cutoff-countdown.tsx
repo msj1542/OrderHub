@@ -7,6 +7,26 @@ const WEEKDAY_INDEX: Record<string, number> = {
   Thursday: 4, Friday: 5, Saturday: 6,
 };
 
+/**
+ * Timezone offset (local minus UTC, in minutes — matching ISO 8601 offset
+ * suffix sign convention directly) for `date` in `tz`. Computed by reading
+ * `date`'s wall-clock components in `tz` and comparing them against `date`'s
+ * real UTC instant, rather than parsing an Intl "GMT±H" string — the string
+ * form varies in format across ICU versions/locales and its sign is easy to
+ * get backwards (this replaced exactly that kind of bug).
+ */
+function getTzOffsetMinutes(date: Date, tz: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(date);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const asUTC = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  return (asUTC - date.getTime()) / 60000;
+}
+
 type Props = {
   cutoffWeekday: string;
   cutoffTime: string;
@@ -15,7 +35,8 @@ type Props = {
   receiveByLabel?: string;
 };
 
-function getNextCutoff(cutoffWeekday: string, cutoffTime: string, tz: string, now: Date): Date {
+/** Exported for unit tests — see cutoff-countdown.test.ts. */
+export function getNextCutoff(cutoffWeekday: string, cutoffTime: string, tz: string, now: Date): Date {
   const localParts = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
     weekday: "long",
@@ -46,18 +67,8 @@ function getNextCutoff(cutoffWeekday: string, cutoffTime: string, tz: string, no
   const targetDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(target);
   const cutoffISO = `${targetDateStr}T${cutoffTime}:00`;
 
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    timeZoneName: "shortOffset",
-  }).formatToParts(target);
-  const offsetStr = parts.find((p) => p.type === "timeZoneName")?.value ?? "";
-  const match = offsetStr.match(/GMT([+-]\d+(?::\d+)?)/);
-  let offsetMinutes = 0;
-  if (match) {
-    const [h, m] = match[1].split(":").map(Number);
-    offsetMinutes = (h ?? 0) * 60 + (Math.sign(h ?? 0) * (m ?? 0));
-  }
-  const offsetSign = offsetMinutes <= 0 ? "+" : "-";
+  const offsetMinutes = getTzOffsetMinutes(target, tz);
+  const offsetSign = offsetMinutes < 0 ? "-" : "+";
   const absH = String(Math.floor(Math.abs(offsetMinutes) / 60)).padStart(2, "0");
   const absM = String(Math.abs(offsetMinutes) % 60).padStart(2, "0");
 

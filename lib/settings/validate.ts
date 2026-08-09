@@ -22,8 +22,36 @@ export type OperationsSettingsInput = {
   labelHeightIn:        number;
 };
 
+/**
+ * The timezone field is free text (an IANA identifier like "America/Chicago"),
+ * not a picker — a typo or a non-IANA name like "Central Time" would
+ * otherwise be silently accepted and then either crash or silently
+ * mis-schedule every cutoff/completion/rush-fee calculation that reads it.
+ * `Intl.DateTimeFormat` throws RangeError for anything it doesn't recognize,
+ * which is the standard way to validate one — but some engines/ICU builds
+ * also accept legacy 3-letter zone abbreviations (e.g. "CST") as backward-
+ * compatibility aliases; those are officially deprecated by the IANA tz
+ * database precisely because they're ambiguous (CST alone could mean US
+ * Central, China, or Cuba) and aren't guaranteed to resolve the same way,
+ * or at all, on every engine/version, so they're rejected here too — a
+ * proper IANA identifier always has an Area/Location form, with "UTC" as
+ * the one canonical exception.
+ */
+function isValidIanaTimezone(tz: string): boolean {
+  if (tz !== "UTC" && !tz.includes("/")) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function validateOperationsSettings(input: OperationsSettingsInput): string | null {
   if (!input.businessTimezone.trim()) return "Business timezone is required.";
+  if (!isValidIanaTimezone(input.businessTimezone.trim())) {
+    return "Business timezone must be a valid IANA timezone name (e.g. America/Chicago).";
+  }
   if (!RUSH_MODES.has(input.rushFeeMode)) return "Invalid rush fee mode.";
   if (input.rushFeeMode === "percentage" || input.rushFeeMode === "flat") {
     if (!Number.isFinite(input.rushFeeValue) || input.rushFeeValue < 0) {
