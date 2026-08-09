@@ -1,6 +1,7 @@
 import { can } from "@/lib/authz/policy";
 import { formatMoney } from "@/lib/pricing/money";
 import { ORDER_STATUS_LABELS, type AppUser, type OrderFull } from "@/lib/db/schema";
+import { formatInTz } from "@/lib/settings/tz";
 import { orderStatusDisplay, StatusPill } from "@/components/ui/status-pill";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
@@ -8,12 +9,16 @@ import { CommentComposer } from "@/components/orders/comment-composer";
 import { OrderActions } from "@/components/orders/order-actions";
 import { WorkOrderSection } from "@/components/orders/work-order-section";
 
-function formatDate(ts: string | Date | null | undefined) {
+function formatDate(ts: string | Date | null | undefined, tz: string) {
   if (!ts) return "—";
-  return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return formatInTz(new Date(ts), tz, { month: "short", day: "numeric", year: "numeric" });
 }
 
-export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }) {
+function formatWhen(ts: string | Date, tz: string) {
+  return formatInTz(new Date(ts), tz, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+export function OrderDetail({ order, user, businessTimezone }: { order: OrderFull; user: AppUser; businessTimezone: string }) {
   const statusKey = order.status as keyof typeof ORDER_STATUS_LABELS;
   const canSeePrice = can(user, "pricing:view");
   const isInternal  = user.role.isInternal;
@@ -71,7 +76,7 @@ export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }
             Expedited{isPreAcceptance ? " · Requested" : ""}
           </p>
           <p className="text-[var(--text-lg)] font-[var(--weight-bold)] text-[var(--status-urgent-text)] mt-[var(--space-1)]">
-            {formatDate(order.requestedDate)}
+            {formatDate(order.requestedDate, businessTimezone)}
           </p>
           {isPreAcceptance && (
             <p className="text-[var(--text-xs)] text-[var(--status-urgent-text)] mt-[var(--space-1)]">
@@ -102,11 +107,11 @@ export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }
         )}
         <div>
           <p className="text-[var(--color-text-muted)] mb-[var(--space-1)]">Default Due Date</p>
-          <p>{formatDate(order.expectedCompletionDate)}</p>
+          <p>{formatDate(order.expectedCompletionDate, businessTimezone)}</p>
         </div>
         <div>
           <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] mb-[var(--space-1)]">Ordered</p>
-          <p className="text-[var(--text-xs)] text-[var(--color-text-muted)]">{formatDate(order.submittedAt ?? order.createdAt)}</p>
+          <p className="text-[var(--text-xs)] text-[var(--color-text-muted)]">{formatDate(order.submittedAt ?? order.createdAt, businessTimezone)}</p>
         </div>
       </div>
 
@@ -139,7 +144,7 @@ export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }
                     <td className="px-[var(--space-4)] py-[var(--space-3)]">
                       <div className="flex items-center gap-[var(--space-2)]">
                         {line.isCustom && <Badge variant="warning">Custom</Badge>}
-                        {line.isExpedited && <Badge variant="urgent">Expedited{line.requestedDate ? ` · ${formatDate(line.requestedDate)}` : ""}</Badge>}
+                        {line.isExpedited && <Badge variant="urgent">Expedited{line.requestedDate ? ` · ${formatDate(line.requestedDate, businessTimezone)}` : ""}</Badge>}
                         <span>{label}</span>
                       </div>
                       {line.pricingStatus === "pricing_pending" && (
@@ -245,9 +250,7 @@ export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }
                   <Badge variant="neutral">Internal</Badge>
                 )}
                 <span className="text-[var(--text-xs)] text-[var(--color-text-muted)]">
-                  {new Date(comment.createdAt).toLocaleString("en-US", {
-                    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-                  })}
+                  {formatWhen(comment.createdAt, businessTimezone)}
                 </span>
               </div>
               <p className="text-[var(--text-sm)] whitespace-pre-line pl-0">{comment.body}</p>

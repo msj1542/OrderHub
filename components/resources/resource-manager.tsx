@@ -7,6 +7,7 @@ import { Input }      from "@/components/ui/input";
 import { Textarea }   from "@/components/ui/textarea";
 import { Label }      from "@/components/ui/label";
 import { Alert }      from "@/components/ui/alert";
+import { FieldHint }  from "@/components/ui/field-hint";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ResourceCategory, ResourceWithVersion } from "@/lib/db/schema";
@@ -63,7 +64,9 @@ export function ResourceManager({ categories, resources }: Props) {
             >
               <strong style={{ display: "block", fontSize: "var(--text-sm)" }}>{r.title}</strong>
               <span style={{ display: "block", fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>
-                {r.categoryName}{r.pricingRestricted ? " · Pricing-restricted" : ""}
+                {r.categoryName}
+                {r.pricingRestricted ? " · Pricing-restricted" : ""}
+                {!r.customerVisible ? " · Internal only" : !r.downloadable ? " · View only" : ""}
               </span>
             </button>
           ))}
@@ -172,16 +175,26 @@ function ResourceEditor({ resource, categories }: { resource?: ResourceWithVersi
             </Select>
           </div>
 
+          <div>
+            <Label htmlFor="res-access" style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+              External access
+              <FieldHint text="Download: customers can save the file. View only: customers can open it, but the app never hands out a download link for it — deters casual right-click-save, doesn't prevent screenshots/devtools. Internal only: not shown to customers at all." />
+            </Label>
+            <Select name="access" defaultValue={resource ? (!resource.customerVisible ? "internal_only" : resource.downloadable ? "download" : "view_only") : "download"}>
+              <SelectTrigger id="res-access" style={{ maxWidth: 280 }}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="download">Download allowed</SelectItem>
+                <SelectItem value="view_only">View only</SelectItem>
+                <SelectItem value="internal_only">Internal only — not visible to customers</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <div style={{ display: "flex", gap: "var(--space-5)", flexWrap: "wrap" }}>
             <label style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", fontSize: "var(--text-sm)", cursor: "pointer" }}>
               <input type="hidden" name="isActive" value="false" />
               <input type="checkbox" name="isActive" value="true" defaultChecked={resource?.isActive ?? true} />
               Active
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", fontSize: "var(--text-sm)", cursor: "pointer" }}>
-              <input type="hidden" name="customerVisible" value="false" />
-              <input type="checkbox" name="customerVisible" value="true" defaultChecked={resource?.customerVisible ?? true} />
-              Customer-visible
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", fontSize: "var(--text-sm)", cursor: "pointer" }}>
               <input type="hidden" name="pricingRestricted" value="false" />

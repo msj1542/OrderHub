@@ -20,6 +20,7 @@ import { can } from "@/lib/authz/policy";
 import { assertCanTransition } from "@/lib/orders/statusMachine";
 import { checkDuplicatePO } from "@/lib/orders/duplicate";
 import { getSettings, computeExpectedCompletion, computeRushFee } from "@/lib/settings/schedule";
+import { dateStrInTz } from "@/lib/settings/tz";
 import { toDecimal, addMoney } from "@/lib/pricing/money";
 import { validateInvoiceVerification, type InvoiceVerificationInput } from "@/lib/orders/invoiceVerification";
 import { insertNotification, getOrderCreatorEmail } from "@/lib/notifications/service";
@@ -1196,8 +1197,15 @@ export type DashboardAction = {
 
 export async function getDashboardCounts(user: AppUser): Promise<DashboardCounts> {
   if (user.role.isInternal) {
-    const nowISO = new Date().toISOString().slice(0, 10);
-    const weekFromNow = new Date(Date.now() + 7 * 86400_000).toISOString().slice(0, 10);
+    // "Today"/"+7 days" must be calendar dates in the business timezone —
+    // expectedCompletionDate is itself a business-local calendar date
+    // string, so comparing it against the server's raw UTC date would drift
+    // by a day for roughly a third of the day depending on the server's
+    // and business's UTC offsets.
+    const { businessTimezone } = await getSettings();
+    const now = new Date();
+    const nowISO = dateStrInTz(now, businessTimezone);
+    const weekFromNow = dateStrInTz(new Date(now.getTime() + 7 * 86400_000), businessTimezone);
 
     // Single aggregate query (via FILTER) instead of 5 separate round trips —
     // keeps the dashboard's connection-pool footprint small so a flaky

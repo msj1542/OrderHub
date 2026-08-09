@@ -59,18 +59,22 @@ export async function saveResourceAction(
     const title              = (formData.get("title") as string)?.trim();
     const description        = (formData.get("description") as string)?.trim();
     const isActive            = formData.getAll("isActive").includes("true");
-    const customerVisible     = formData.getAll("customerVisible").includes("true");
     const pricingRestricted   = formData.getAll("pricingRestricted").includes("true");
+    // Single "External access" control (download / view-only / internal-only)
+    // maps to the two underlying columns — see resource-manager.tsx.
+    const access = (formData.get("access") as string) || "download";
+    const customerVisible = access !== "internal_only";
+    const downloadable    = access !== "view_only";
 
     if (!categoryId || !title) return { error: "Category and title are required." };
 
     if (id) {
-      await updateResource(id, { categoryId, title, description: description || null, isActive, customerVisible, pricingRestricted });
+      await updateResource(id, { categoryId, title, description: description || null, isActive, customerVisible, pricingRestricted, downloadable });
       revalidatePath("/settings/resources");
       revalidatePath("/resources");
       return { success: "Resource saved.", newId: id };
     } else {
-      const created = await createResource({ categoryId, title, description, customerVisible, pricingRestricted });
+      const created = await createResource({ categoryId, title, description, customerVisible, pricingRestricted, downloadable });
       revalidatePath("/settings/resources");
       revalidatePath("/resources");
       return { success: "Resource created.", newId: created.id };

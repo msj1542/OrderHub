@@ -111,6 +111,7 @@ export async function createResource(data: {
   productId?:        string;
   customerVisible?:  boolean;
   pricingRestricted?: boolean;
+  downloadable?:     boolean;
 }): Promise<{ id: string }> {
   const [row] = await db
     .insert(resources)
@@ -121,6 +122,7 @@ export async function createResource(data: {
       productId:         data.productId || null,
       customerVisible:   data.customerVisible ?? true,
       pricingRestricted: data.pricingRestricted ?? false,
+      downloadable:      data.downloadable ?? true,
     })
     .returning({ id: resources.id });
   return row;
@@ -130,7 +132,7 @@ export async function updateResource(
   id: string,
   data: Partial<{
     title: string; description: string | null; categoryId: string;
-    isActive: boolean; customerVisible: boolean; pricingRestricted: boolean;
+    isActive: boolean; customerVisible: boolean; pricingRestricted: boolean; downloadable: boolean;
   }>,
 ): Promise<void> {
   await db.update(resources).set({ ...data, updatedAt: new Date() }).where(eq(resources.id, id));

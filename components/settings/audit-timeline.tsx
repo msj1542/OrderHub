@@ -6,11 +6,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Badge }       from "@/components/ui/badge";
 import { Pagination }  from "@/components/ui/pagination";
 import type { AuditEntryWithNames } from "@/lib/audit/service";
+import { formatInTz } from "@/lib/settings/tz";
 
-function formatWhen(ts: string | Date) {
-  return new Date(ts).toLocaleString("en-US", {
-    month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
-  });
+function formatWhen(ts: string | Date, tz: string) {
+  return formatInTz(new Date(ts), tz, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 type Props = {
@@ -18,9 +17,10 @@ type Props = {
   total:    number;
   page:     number;
   pageSize: number;
+  businessTimezone: string;
 };
 
-export function AuditTimeline({ entries, total, page, pageSize }: Props) {
+export function AuditTimeline({ entries, total, page, pageSize, businessTimezone }: Props) {
   const router   = useRouter();
   const pathname = usePathname();
 
@@ -60,7 +60,7 @@ export function AuditTimeline({ entries, total, page, pageSize }: Props) {
               {e.orderNumber && <Badge variant="info">{e.orderNumber}</Badge>}
             </div>
             <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] mt-[var(--space-1)]">
-              {e.userName ?? "System"} · {formatWhen(e.createdAt)}
+              {e.userName ?? "System"} · {formatWhen(e.createdAt, businessTimezone)}
             </p>
             {(e.previousValue || e.newValue) && (
               <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] mt-[var(--space-1)]">

@@ -2,6 +2,7 @@ import { requireEffectiveUser } from "@/lib/auth";
 import { can } from "@/lib/authz/policy";
 import { getDashboardCounts, getDashboardActions, type DashboardAction } from "@/lib/orders/service";
 import { getSettings, computeExpectedCompletion } from "@/lib/settings/schedule";
+import { formatInTz } from "@/lib/settings/tz";
 import { CutoffCountdown } from "@/components/orders/cutoff-countdown";
 import { StatusPill } from "@/components/ui/status-pill";
 import { PackageSearch } from "lucide-react";
@@ -9,9 +10,9 @@ import Link from "next/link";
 
 export const metadata = { title: "Dashboard — Ordering Hub" };
 
-function formatDate(ts: string | Date | null | undefined) {
+function formatDate(ts: string | Date | null | undefined, tz: string) {
   if (!ts) return "—";
-  return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return formatInTz(new Date(ts), tz, { month: "short", day: "numeric" });
 }
 
 function ordinal(n: number): string {
@@ -76,7 +77,7 @@ function ReadyForPickupCard({ value }: { value: number }) {
   );
 }
 
-function ActionRow({ action }: { action: DashboardAction }) {
+function ActionRow({ action, businessTimezone }: { action: DashboardAction; businessTimezone: string }) {
   const href = action.target === "orders" ? `/orders?id=${action.orderId}` : "/production";
   const isInvoiceAction = action.key.startsWith("invoice-");
   return (
@@ -110,7 +111,7 @@ function ActionRow({ action }: { action: DashboardAction }) {
         <p className="text-[var(--text-xs)] text-[var(--color-text-muted)]">
           {action.isExpedited ? "Requested" : "Due"}
         </p>
-        <p className="text-[var(--text-sm)] font-[var(--weight-medium)]">{formatDate(action.dueDate)}</p>
+        <p className="text-[var(--text-sm)] font-[var(--weight-medium)]">{formatDate(action.dueDate, businessTimezone)}</p>
         {action.isExpedited && <StatusPill label="Expedited" family="urgent" />}
       </div>
       <span className="text-[var(--color-text-muted)]" aria-hidden>→</span>
@@ -250,7 +251,7 @@ export default async function DashboardPage() {
           </div>
           <div className="flex flex-col gap-[var(--space-3)]">
             {actions.map((action) => (
-              <ActionRow key={action.key} action={action} />
+              <ActionRow key={action.key} action={action} businessTimezone={settings.businessTimezone} />
             ))}
           </div>
         </section>

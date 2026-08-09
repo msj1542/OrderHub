@@ -33,10 +33,17 @@ export async function GET(
     return new Response("File not found.", { status: 404 });
   }
 
+  // Internal staff and downloadable resources get a normal download link.
+  // A view-only resource never gets a download-flagged signed URL for an
+  // external viewer — the browser renders it inline instead. This deters
+  // casual right-click-save; it isn't real DRM (screenshots/devtools still
+  // work) and callers were told that plainly in the admin UI.
+  const forceDownload = user.role.isInternal || resource.downloadable;
+
   const admin = createAdminClient();
   const { data, error } = await admin.storage
     .from(BUCKET)
-    .createSignedUrl(version.filePath, SIGNED_URL_TTL, { download: version.fileName });
+    .createSignedUrl(version.filePath, SIGNED_URL_TTL, forceDownload ? { download: version.fileName } : undefined);
 
   if (error || !data?.signedUrl) {
     return new Response("Could not generate download link.", { status: 502 });

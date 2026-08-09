@@ -5,6 +5,8 @@
  * getSettings() (which does read the database) lives in schedule.ts.
  */
 
+import { getLocalWallTime } from "./tz";
+
 export type AppSettings = {
   businessTimezone:    string;
   rushFeeMode:         "percentage" | "flat" | "disabled" | "tiered";
@@ -85,17 +87,7 @@ function expectedCompletionDaysOut(
 export function computeExpectedCompletion(settings: AppSettings, now: Date): string {
   const tz = settings.businessTimezone;
 
-  const localParts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    weekday: "long",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(now);
-
-  const localWeekday = localParts.find((p) => p.type === "weekday")?.value ?? "Monday";
-  const localHour    = Number(localParts.find((p) => p.type === "hour")?.value   ?? 0);
-  const localMinute  = Number(localParts.find((p) => p.type === "minute")?.value ?? 0);
+  const { weekday: localWeekday, hour: localHour, minute: localMinute } = getLocalWallTime(now, tz);
   const localMinutes = localHour * 60 + localMinute;
   const nowDayIdx     = WEEKDAY_INDEX[localWeekday] ?? 1;
 
@@ -183,14 +175,7 @@ export function lastBusinessDayBefore(dateStr: string): string {
  */
 function computeWindowMinMax(settings: AppSettings, now: Date): { min: string; max: string } {
   const tz = settings.businessTimezone;
-  const localParts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(now);
-  const localHour   = Number(localParts.find((p) => p.type === "hour")?.value   ?? 0);
-  const localMinute = Number(localParts.find((p) => p.type === "minute")?.value ?? 0);
+  const { hour: localHour, minute: localMinute } = getLocalWallTime(now, tz);
   const localMinutes = localHour * 60 + localMinute;
 
   const [cutoffH, cutoffM] = settings.cutoffTime.split(":").map(Number);

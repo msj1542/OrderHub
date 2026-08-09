@@ -9,11 +9,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { markNotificationReadAction, markAllNotificationsReadAction } from "@/app/(app)/notifications/actions";
 import type { NotificationWithReadState } from "@/lib/db/schema";
+import { formatInTz } from "@/lib/settings/tz";
 
-function formatWhen(ts: string | Date) {
-  return new Date(ts).toLocaleString("en-US", {
-    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-  });
+function formatWhen(ts: string | Date, tz: string) {
+  return formatInTz(new Date(ts), tz, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 type Props = {
@@ -21,9 +20,10 @@ type Props = {
   total:         number;
   page:          number;
   pageSize:      number;
+  businessTimezone: string;
 };
 
-export function NotificationList({ notifications, total, page, pageSize }: Props) {
+export function NotificationList({ notifications, total, page, pageSize, businessTimezone }: Props) {
   const router   = useRouter();
   const pathname = usePathname();
   const [pending, setPending] = React.useState<string | null>(null);
@@ -91,7 +91,7 @@ export function NotificationList({ notifications, total, page, pageSize }: Props
               </div>
               <p className="text-[var(--text-sm)] text-[var(--color-text-muted)]">{n.body}</p>
               <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] mt-[var(--space-2)]">
-                {formatWhen(n.createdAt)}
+                {formatWhen(n.createdAt, businessTimezone)}
               </p>
             </div>
             {!n.isRead && (

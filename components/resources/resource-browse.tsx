@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Download, FolderOpen } from "lucide-react";
+import { FileText, Download, Eye, FolderOpen } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge }       from "@/components/ui/badge";
 import type { ResourceCategory, ResourceWithVersion } from "@/lib/db/schema";
@@ -39,6 +39,8 @@ export function ResourceBrowse({ categories, resources }: Props) {
                 <a
                   key={r.id}
                   href={`/api/resources/${r.currentVersion!.id}`}
+                  target={r.downloadable ? undefined : "_blank"}
+                  rel={r.downloadable ? undefined : "noopener noreferrer"}
                   className="flex items-start gap-[var(--space-3)] p-[var(--space-4)] rounded-[var(--radius-md)] border transition-colors"
                   style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-panel)", textDecoration: "none", color: "inherit" }}
                 >
@@ -47,12 +49,15 @@ export function ResourceBrowse({ categories, resources }: Props) {
                     <div className="flex items-center gap-[var(--space-2)]">
                       <p className="text-[var(--text-sm)] font-[var(--weight-medium)] truncate">{r.title}</p>
                       {r.pricingRestricted && <Badge variant="warning">Pricing</Badge>}
+                      {!r.downloadable && <Badge variant="neutral">View only</Badge>}
                     </div>
                     {r.description && (
                       <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] mt-[var(--space-1)]">{r.description}</p>
                     )}
                   </div>
-                  <Download size={14} className="shrink-0 mt-[2px]" style={{ color: "var(--color-text-muted)" }} />
+                  {r.downloadable
+                    ? <Download size={14} className="shrink-0 mt-[2px]" style={{ color: "var(--color-text-muted)" }} />
+                    : <Eye size={14} className="shrink-0 mt-[2px]" style={{ color: "var(--color-text-muted)" }} />}
                 </a>
               ))}
             </div>

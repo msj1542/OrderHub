@@ -12,11 +12,41 @@ export function formatInTz(date: Date, tz: string, opts?: Intl.DateTimeFormatOpt
   }).format(date);
 }
 
-/** Return the current date string (YYYY-MM-DD) in the business timezone. */
-export function todayInTz(tz: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).formatToParts(new Date());
+/** Return `date`'s calendar date string (YYYY-MM-DD) as observed in `tz`. */
+export function dateStrInTz(date: Date, tz: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).formatToParts(date);
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/** Return the current date string (YYYY-MM-DD) in the business timezone. */
+export function todayInTz(tz: string): string {
+  return dateStrInTz(new Date(), tz);
+}
+
+export type LocalWallTime = { weekday: string; hour: number; minute: number };
+
+/**
+ * Wall-clock weekday/hour/minute for `date` as observed in `tz`. Shared by
+ * every call site that needs "what weekday/time is it right now, in the
+ * business timezone" (the cutoff countdown, expected-completion calc, and
+ * expedited-date window calc all needed exactly this and previously each
+ * reimplemented it independently).
+ */
+export function getLocalWallTime(date: Date, tz: string): LocalWallTime {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    weekday: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return {
+    weekday: get("weekday") || "Monday",
+    hour: Number(get("hour")) || 0,
+    minute: Number(get("minute")) || 0,
+  };
 }
 
 /** Parse a YYYY-MM-DD string into a Date at midnight UTC. */

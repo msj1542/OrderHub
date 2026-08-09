@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth";
 import { can }         from "@/lib/authz/policy";
 import { redirect }    from "next/navigation";
 import { listAuditLog } from "@/lib/audit/service";
+import { getSettings } from "@/lib/settings/schedule";
 import { AuditTimeline } from "@/components/settings/audit-timeline";
 
 export const metadata = { title: "Audit History — Ordering Hub" };
@@ -19,7 +20,18 @@ export default async function AuditHistoryPage({
   const params = await searchParams;
   const page   = Math.max(1, Number(params.page) || 1);
 
-  const { entries, total } = await listAuditLog({ page, pageSize: PAGE_SIZE });
+  const [{ entries, total }, settings] = await Promise.all([
+    listAuditLog({ page, pageSize: PAGE_SIZE }),
+    getSettings(),
+  ]);
 
-  return <AuditTimeline entries={entries} total={total} page={page} pageSize={PAGE_SIZE} />;
+  return (
+    <AuditTimeline
+      entries={entries}
+      total={total}
+      page={page}
+      pageSize={PAGE_SIZE}
+      businessTimezone={settings.businessTimezone}
+    />
+  );
 }

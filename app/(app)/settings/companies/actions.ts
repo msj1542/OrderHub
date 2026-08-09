@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser, getPreviewContext, assertNotPreview } from "@/lib/auth";
 import { can } from "@/lib/authz/policy";
 import { createCompany, updateCompany } from "@/lib/companies/service";
-import { createUser } from "@/lib/users/service";
+import { createUser, updateUser, resendInvite } from "@/lib/users/service";
 import { ROLES, type RoleCode } from "@/lib/authz/roles";
 
 export type CompanyState = { error?: string; success?: string; newId?: string };
@@ -91,5 +91,42 @@ export async function inviteExternalAdminAction(
     return { success: `Invite sent to ${email}.` };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Invite failed." };
+  }
+}
+
+export type UpdateCompanyMemberState = { error?: string; success?: string };
+
+/**
+ * Internal-admin path for managing an existing company's users (role
+ * change, deactivate/reactivate) — unlike the company-admin self-service
+ * `updateCompanyUser`, this isn't scoped to the acting user's own company
+ * and is allowed to touch `external_admin` rows too.
+ */
+export async function updateCompanyMemberAction(
+  id: string,
+  data: { roleCode?: RoleCode; isActive?: boolean },
+): Promise<UpdateCompanyMemberState> {
+  const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
+  if (!can(user, "companies:manage")) return { error: "Not authorized." };
+  try {
+    assertNotPreview(preview);
+    await updateUser(id, data, user);
+    revalidatePath("/settings/companies");
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Update failed." };
+  }
+}
+
+export async function resendCompanyInviteAction(id: string): Promise<UpdateCompanyMemberState> {
+  const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
+  if (!can(user, "companies:manage")) return { error: "Not authorized." };
+  try {
+    assertNotPreview(preview);
+    await resendInvite(id);
+    revalidatePath("/settings/companies");
+    return { success: "Invite resent." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Could not resend invite." };
   }
 }

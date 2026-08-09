@@ -8,20 +8,30 @@ import { Textarea }  from "@/components/ui/textarea";
 import { Label }     from "@/components/ui/label";
 import { Alert }     from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ROLE_DISPLAY } from "@/lib/authz/roles";
+import { UserManager } from "@/components/settings/user-manager";
+import { ROLE_DISPLAY, type RoleCode } from "@/lib/authz/roles";
 import type { Company } from "@/lib/db/schema";
-import { saveCompanyAction, inviteExternalAdminAction } from "@/app/(app)/settings/companies/actions";
+import type { UserWithRole } from "@/lib/users/service";
+import {
+  saveCompanyAction,
+  inviteExternalAdminAction,
+  updateCompanyMemberAction,
+  resendCompanyInviteAction,
+  type InviteUserState,
+} from "@/app/(app)/settings/companies/actions";
 
 const PREVIEW_ROLES = ["external_admin", "external_ordering", "external_reference"] as const;
-const INVITABLE_ROLES = ["external_admin", "external_ordering", "external_reference"] as const;
+const INVITABLE_ROLES: RoleCode[] = ["external_admin", "external_ordering", "external_reference"];
 
 interface Props {
   companies: Company[];
+  companyUsers: Record<string, UserWithRole[]>;
+  currentUserId: string;
   canPreview: boolean;
   enterPreviewAction: (companyId: string, companyName: string, roleCode: string) => Promise<void>;
 }
 
-export function CompanyManager({ companies, canPreview, enterPreviewAction }: Props) {
+export function CompanyManager({ companies, companyUsers, currentUserId, canPreview, enterPreviewAction }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(companies[0]?.id ?? null);
   const selected = companies.find((c) => c.id === selectedId);
 
@@ -74,6 +84,8 @@ export function CompanyManager({ companies, canPreview, enterPreviewAction }: Pr
       <CompanyEditor
         key={selected?.id ?? "new-company"}
         company={selected}
+        users={selected ? (companyUsers[selected.id] ?? []) : []}
+        currentUserId={currentUserId}
         canPreview={canPreview}
         enterPreviewAction={enterPreviewAction}
       />
@@ -81,8 +93,10 @@ export function CompanyManager({ companies, canPreview, enterPreviewAction }: Pr
   );
 }
 
-function CompanyEditor({ company, canPreview, enterPreviewAction }: {
+function CompanyEditor({ company, users, currentUserId, canPreview, enterPreviewAction }: {
   company?: Company;
+  users: UserWithRole[];
+  currentUserId: string;
   canPreview: boolean;
   enterPreviewAction: Props["enterPreviewAction"];
 }) {
@@ -102,12 +116,13 @@ function CompanyEditor({ company, canPreview, enterPreviewAction }: {
   const [previewRole, setPreviewRole] = useState<string>(PREVIEW_ROLES[0]);
   const [previewPending, setPreviewPending] = useState(false);
 
-  const [inviteState, inviteAction, invitePending] = useActionState(inviteExternalAdminAction, {});
-  const [inviteFormKey, setInviteFormKey] = useState(0);
-  const [prevInviteSuccess, setPrevInviteSuccess] = useState(inviteState.success);
-  if (inviteState.success !== prevInviteSuccess) {
-    setPrevInviteSuccess(inviteState.success);
-    if (inviteState.success) setInviteFormKey((k) => k + 1);
+  // inviteExternalAdminAction reads companyId from the submitted FormData;
+  // UserManager's own invite form doesn't know about companies, so this
+  // wrapper injects it before delegating — avoids adding a companies-only
+  // hidden field to a component also shared by the internal Team page.
+  async function inviteCompanyMemberAction(prev: InviteUserState, formData: FormData): Promise<InviteUserState> {
+    formData.set("companyId", company!.id);
+    return inviteExternalAdminAction(prev, formData);
   }
 
   return (
@@ -199,37 +214,21 @@ function CompanyEditor({ company, canPreview, enterPreviewAction }: {
         {company && (
           <div style={{ marginTop: "var(--space-8)", paddingTop: "var(--space-6)", borderTop: "1px solid var(--color-border-subtle)" }}>
             <h3 style={{ fontSize: "var(--text-base)", fontWeight: "var(--weight-semibold)", margin: "0 0 var(--space-2)" }}>
-              Invite a user
+              Users
             </h3>
             <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)", margin: "0 0 var(--space-3)" }}>
-              Creates the first account for this company (e.g. their company admin) so they can sign in and invite the rest of their team themselves.
+              Everyone with access to this company&apos;s account. Deactivate to remove access, or resend an invite that hasn&apos;t been accepted yet.
             </p>
-            {(inviteState.error || inviteState.success) && (
-              <Alert variant={inviteState.error ? "danger" : "success"} className="mb-3">{inviteState.error ?? inviteState.success}</Alert>
-            )}
-            <form key={inviteFormKey} action={inviteAction} style={{ display: "flex", gap: "var(--space-3)", alignItems: "end", flexWrap: "wrap" }}>
-              <input type="hidden" name="companyId" value={company.id} />
-              <div>
-                <Label htmlFor="invite-name" style={{ fontSize: "var(--text-xs)" }}>Name</Label>
-                <Input id="invite-name" name="name" required style={{ width: 180 }} />
-              </div>
-              <div>
-                <Label htmlFor="invite-email" style={{ fontSize: "var(--text-xs)" }}>Email</Label>
-                <Input id="invite-email" name="email" type="email" required style={{ width: 220 }} />
-              </div>
-              <div>
-                <Label htmlFor="invite-role" style={{ fontSize: "var(--text-xs)" }}>Role</Label>
-                <Select name="roleCode" defaultValue={INVITABLE_ROLES[0]}>
-                  <SelectTrigger id="invite-role" style={{ width: 200 }}><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {INVITABLE_ROLES.map((r) => <SelectItem key={r} value={r}>{ROLE_DISPLAY[r]}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button type="submit" size="sm" disabled={invitePending}>
-                {invitePending ? "Sending…" : "Send Invite"}
-              </Button>
-            </form>
+            <UserManager
+              title="Company users"
+              users={users}
+              currentUserId={currentUserId}
+              roleOptions={INVITABLE_ROLES}
+              canChangeRole
+              inviteAction={inviteCompanyMemberAction}
+              updateAction={updateCompanyMemberAction}
+              resendAction={resendCompanyInviteAction}
+            />
           </div>
         )}
 

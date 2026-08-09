@@ -21,9 +21,13 @@ interface Props {
   canChangeRole:    boolean;
   inviteAction:     (prev: InviteState, formData: FormData) => Promise<InviteState>;
   updateAction:     (id: string, data: { roleCode?: RoleCode; isActive?: boolean }) => Promise<UpdateResult>;
+  /** Re-trigger the invite email for a user who hasn't accepted it yet. Omit to hide the "Resend Invite" control. */
+  resendAction?:    (id: string) => Promise<UpdateResult>;
+  /** Heading above the user list — defaults to "Team" (internal Team page); pass something else (e.g. "Users") when reused elsewhere. */
+  title?:           string;
 }
 
-export function UserManager({ users, currentUserId, roleOptions, canChangeRole, inviteAction, updateAction }: Props) {
+export function UserManager({ users, currentUserId, roleOptions, canChangeRole, inviteAction, updateAction, resendAction, title = "Team" }: Props) {
   const [inviteState, inviteFormAction, invitePending] = useActionState(inviteAction, {});
 
   return (
@@ -32,7 +36,7 @@ export function UserManager({ users, currentUserId, roleOptions, canChangeRole, 
         style={{ background: "var(--color-panel)", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-lg)", overflow: "hidden" }}
       >
         <div style={{ padding: "var(--space-4) var(--space-5)", borderBottom: "1px solid var(--color-border-subtle)" }}>
-          <h2 style={{ fontSize: "var(--text-lg)", margin: 0 }}>Team</h2>
+          <h2 style={{ fontSize: "var(--text-lg)", margin: 0 }}>{title}</h2>
         </div>
         <div style={{ padding: "var(--space-2)" }}>
           {users.length === 0 && (
@@ -48,6 +52,7 @@ export function UserManager({ users, currentUserId, roleOptions, canChangeRole, 
               roleOptions={roleOptions}
               canChangeRole={canChangeRole}
               updateAction={updateAction}
+              resendAction={resendAction}
             />
           ))}
         </div>
@@ -93,15 +98,18 @@ export function UserManager({ users, currentUserId, roleOptions, canChangeRole, 
   );
 }
 
-function UserRow({ user, isSelf, roleOptions, canChangeRole, updateAction }: {
+function UserRow({ user, isSelf, roleOptions, canChangeRole, updateAction, resendAction }: {
   user: UserWithRole;
   isSelf: boolean;
   roleOptions: RoleCode[];
   canChangeRole: boolean;
   updateAction: Props["updateAction"];
+  resendAction: Props["resendAction"];
 }) {
   const [pending, startTransition] = useTransition();
+  const [resendPending, startResendTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [resendResult, setResendResult] = useState<string | null>(null);
   const [role, setRole] = useState(user.roleCode);
 
   function toggleActive() {
@@ -121,6 +129,17 @@ function UserRow({ user, isSelf, roleOptions, canChangeRole, updateAction }: {
     });
   }
 
+  function handleResend() {
+    if (!resendAction) return;
+    setResendResult(null);
+    startResendTransition(async () => {
+      const result = await resendAction(user.id);
+      setResendResult(result.error ?? result.success ?? null);
+    });
+  }
+
+  const isPending = !user.authUserId;
+
   return (
     <div
       style={{
@@ -134,8 +153,12 @@ function UserRow({ user, isSelf, roleOptions, canChangeRole, updateAction }: {
           <strong style={{ fontSize: "var(--text-sm)" }}>{user.name}</strong>
           {isSelf && <Badge variant="neutral">You</Badge>}
           {!user.isActive && <Badge variant="danger">Deactivated</Badge>}
+          {isPending && user.isActive && <Badge variant="warning">Invite pending</Badge>}
         </div>
         <span style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>{user.email}</span>
+        {resendResult && (
+          <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)", marginTop: "var(--space-1)" }}>{resendResult}</p>
+        )}
       </div>
 
       {canChangeRole ? (
@@ -149,6 +172,12 @@ function UserRow({ user, isSelf, roleOptions, canChangeRole, updateAction }: {
         <span style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)", width: 170 }}>
           {ROLE_DISPLAY[user.roleCode as RoleCode] ?? user.roleCode}
         </span>
+      )}
+
+      {resendAction && isPending && user.isActive && (
+        <Button size="sm" variant="ghost" disabled={resendPending} onClick={handleResend}>
+          {resendPending ? "…" : "Resend Invite"}
+        </Button>
       )}
 
       <Button

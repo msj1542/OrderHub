@@ -2,6 +2,7 @@ import { requireEffectiveUser } from "@/lib/auth";
 import { can, canAny } from "@/lib/authz/policy";
 import { redirect } from "next/navigation";
 import { listOrders, getOrder } from "@/lib/orders/service";
+import { getSettings } from "@/lib/settings/schedule";
 import type { OrderStatus } from "@/lib/db/schema";
 import { MasterDetail } from "@/components/ui/master-detail";
 import { OrdersWorkspace } from "@/components/orders/orders-workspace";
@@ -42,7 +43,7 @@ export default async function OrdersPage({
     : (params.status as OrderStatus);
   const page       = Math.max(1, Number(params.page) || 1);
 
-  const [{ orders, total }, selectedOrder] = await Promise.all([
+  const [{ orders, total }, selectedOrder, settings] = await Promise.all([
     listOrders(user, {
       search: search || undefined,
       status: status === "all" ? undefined : status,
@@ -50,6 +51,7 @@ export default async function OrdersPage({
       pageSize: PAGE_SIZE,
     }),
     selectedId ? getOrder(selectedId, user) : null,
+    getSettings(),
   ]);
 
   const canSeePrice = can(user, "pricing:view");
@@ -100,7 +102,7 @@ export default async function OrdersPage({
         </Link>
       </div>
       <div className="flex-1 overflow-auto min-h-0">
-        <OrderDetail order={selectedOrder} user={user} />
+        <OrderDetail order={selectedOrder} user={user} businessTimezone={settings.businessTimezone} />
       </div>
     </div>
   ) : (

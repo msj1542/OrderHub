@@ -433,6 +433,14 @@ export const resources = pgTable("resources", {
   isActive:          boolean("is_active").notNull().default(true),
   customerVisible:   boolean("customer_visible").notNull().default(true),
   pricingRestricted: boolean("pricing_restricted").notNull().default(false),
+  /**
+   * Only meaningful when customerVisible is true (a resource hidden from
+   * customers entirely is already "internal only" regardless of this flag).
+   * false = external viewers can open the file but the app never hands out
+   * a download-flagged signed URL for it — best-effort deterrent against
+   * casual right-click-save, not real DRM (see app/api/resources/[id]/route.ts).
+   */
+  downloadable:      boolean("downloadable").notNull().default(true),
   currentVersionId:  uuid("current_version_id"),
   createdAt:         timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
   updatedAt:         timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),

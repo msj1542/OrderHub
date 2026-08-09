@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { getLocalWallTime } from "@/lib/settings/tz";
 
 const WEEKDAY_INDEX: Record<string, number> = {
   Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
@@ -37,17 +38,7 @@ type Props = {
 
 /** Exported for unit tests — see cutoff-countdown.test.ts. */
 export function getNextCutoff(cutoffWeekday: string, cutoffTime: string, tz: string, now: Date): Date {
-  const localParts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    weekday: "long",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(now);
-
-  const localWeekday = localParts.find((p) => p.type === "weekday")?.value ?? "Monday";
-  const localHour    = Number(localParts.find((p) => p.type === "hour")?.value   ?? 0);
-  const localMinute  = Number(localParts.find((p) => p.type === "minute")?.value ?? 0);
+  const { weekday: localWeekday, hour: localHour, minute: localMinute } = getLocalWallTime(now, tz);
 
   const cutoffDayIdx = WEEKDAY_INDEX[cutoffWeekday] ?? 1;
   const nowDayIdx    = WEEKDAY_INDEX[localWeekday]  ?? 1;

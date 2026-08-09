@@ -13,9 +13,25 @@ import { saveOperationsSettingsAction } from "@/app/(app)/settings/operations/ac
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+// Curated list rather than the full ~400-zone IANA database — this is a
+// single US-based business's operating timezone, not a general-purpose
+// locale picker. Values are real IANA zone names (validated server-side by
+// isValidIanaTimezone too) so Intl/DST handling stays correct year-round.
+const TIMEZONES = [
+  { value: "America/New_York",    label: "Eastern (America/New_York)" },
+  { value: "America/Chicago",     label: "Central (America/Chicago)" },
+  { value: "America/Denver",      label: "Mountain (America/Denver)" },
+  { value: "America/Phoenix",     label: "Mountain — no DST (America/Phoenix)" },
+  { value: "America/Los_Angeles", label: "Pacific (America/Los_Angeles)" },
+  { value: "America/Anchorage",   label: "Alaska (America/Anchorage)" },
+  { value: "Pacific/Honolulu",    label: "Hawaii (Pacific/Honolulu)" },
+  { value: "UTC",                 label: "UTC" },
+];
+
 export function OperationsSettingsPanel({ settings }: { settings: AppSettings }) {
   const [state, action, pending] = useActionState(saveOperationsSettingsAction, {});
   const [rushFeeMode, setRushFeeMode] = useState(settings.rushFeeMode);
+  const [businessTimezone, setBusinessTimezone] = useState(settings.businessTimezone);
 
   // Fields that feed the live tiered-rush-fee preview table below need to
   // be controlled so the table recalculates as the schedule is edited,
@@ -47,6 +63,13 @@ export function OperationsSettingsPanel({ settings }: { settings: AppSettings })
     });
   }, [settings, cutoffWeekday, cutoffTime, completionWeekday, completionTime, completionWeekOffset, tierMaxPercent, tierMinPercent]);
 
+  // If the stored value (e.g. from before this was a dropdown) isn't one of
+  // the curated zones, keep it selectable so saving the form doesn't
+  // silently change it out from under the admin.
+  const timezoneOptions = TIMEZONES.some((t) => t.value === settings.businessTimezone)
+    ? TIMEZONES
+    : [...TIMEZONES, { value: settings.businessTimezone, label: `${settings.businessTimezone} (current)` }];
+
   return (
     <section
       style={{ background: "var(--color-panel)", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-lg)", overflow: "hidden", maxWidth: 640 }}
@@ -67,9 +90,14 @@ export function OperationsSettingsPanel({ settings }: { settings: AppSettings })
           <div>
             <Label htmlFor="tz" style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
               Business timezone
-              <FieldHint text="IANA timezone name (e.g. America/Chicago). Drives every date/completion calculation." />
+              <FieldHint text="Drives every date/completion calculation, and how dates/times display throughout the app — cutoff countdown, due dates, order timestamps, comments, and notifications all use this single setting." />
             </Label>
-            <Input id="tz" name="businessTimezone" required defaultValue={settings.businessTimezone} placeholder="America/Chicago" style={{ maxWidth: 260 }} />
+            <Select name="businessTimezone" value={businessTimezone} onValueChange={setBusinessTimezone}>
+              <SelectTrigger id="tz" style={{ maxWidth: 320 }}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {timezoneOptions.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
 
           <div style={{ borderTop: "1px solid var(--color-border-subtle)", paddingTop: "var(--space-5)" }}>
