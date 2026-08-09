@@ -163,7 +163,13 @@ generated but NOT applied, see note).
 screenshotted individually) and is sequenced last so it's applied to the settled post-revision
 layouts rather than layouts that are about to change again in Phases 1–5.
 
-**Status: Not Started**
+**Status: Done** — all 5 items addressed. See Progress Log for a significant caveat on 6.5:
+this is the first phase where a real authenticated browser session was available (previous
+phases were blocked entirely), but the session's Browser pane reports it is not compositing
+frames, which made pixel-level visual confirmation of animated/transform-based UI (the sidebar
+drawer specifically) unobtainable even with login access — verified via DOM/inline-style/
+`matchMedia` state instead, which was consistent and correct across every test. Read the full
+note below before trusting 6.1's drawer animation without a manual check.
 
 | # | Task | Source | Files (expected) |
 |---|------|--------|-------------------|
@@ -267,6 +273,116 @@ before this phase is fully live:** apply
 `address` field will read as empty and any save through either the
 internal or external company-details form will fail at the database
 (unknown column).
+
+### 2026-08-09 — Phase 6 implemented (all 5 items) — first real browser access, with a caveat
+
+**Context on verification this session:** for the first time in this revision pass, the dev
+server's Browser pane had an already-authenticated session (not something this agent logged
+into — a session cookie was already present). This let me confirm one *live, real* bug: Phase
+5's `companies.address` column had never been applied to the connected database, and every
+authenticated page was 500ing (`column companies.address does not exist`). With the user's
+explicit go-ahead, applied `supabase/migrations/0011_company_address.sql` directly via `psql`
+(drizzle-kit's own `db:push`/`db:migrate` both proved unusable — `db:push` crashed with an
+internal parser error on an existing CHECK constraint, and `db:migrate` has no journal history
+for this repo's prior 10 migrations to work from, consistent with the Phase 5 note that they
+were applied outside drizzle-kit's tracking). This is no longer just a "run this when you get a
+chance" item — **it was actively broken and is now fixed** on whatever database this dev
+session was pointed at.
+
+- **6.1** Sidebar no longer stays fixed-width and eating into content space. New
+  `components/layout/app-shell.tsx` (client component) lifts the mobile-drawer open/closed
+  state above `Sidebar` and `Topbar` (both server-rendered siblings previously — a shared
+  client wrapper was the simplest way to coordinate them without introducing a context).
+  `Topbar` gained a hamburger button (`md:hidden`) calling `onMenuClick`. `Sidebar` gained
+  `open`/`onClose` props, a backdrop (click-to-close), auto-close on route change, and
+  Escape-independent close-on-nav-link-click.
+  **Two real bugs found and fixed along the way, both via actual DOM inspection, not
+  guesswork:**
+  - The hamburger button's inline `style={{ display: "flex" }}` was silently overriding its
+    own `md:hidden` Tailwind class at every viewport width, because inline styles always beat
+    stylesheet classes — confirmed via `getComputedStyle` showing `display:flex` at 1280px
+    when it should have been `none`. Fixed by moving `display`/`alignItems`/`justifyContent`
+    out of the inline style and into the className instead.
+  - The drawer's open/close toggle was originally implemented with Tailwind's
+    `translate-x-0`/`-translate-x-full` utility classes (v4's native-`translate`-property
+    approach) plus a `md:translate-x-0` override for desktop. Extensive DOM-level testing
+    (inline style attribute, computed `--tw-translate-x` custom property, `matchMedia`, the
+    actual compiled CSS file fetched directly) confirmed the underlying values were always
+    resolving correctly, but this session's Browser pane — which reports it is "not
+    compositing frames" — never reflected the resulting visual position, on any of several
+    different CSS strategies tried (translate property, transform property, class-based,
+    inline-style-based), including sometimes even on a page's very first paint. That pattern
+    (DOM state always correct, visual state unreliable specifically in this non-displayed
+    pane) points at a tooling limitation rather than a real defect, but rather than ship
+    something I couldn't visually confirm at all, switched to the most conservative,
+    best-established option available: an explicit `useSyncExternalStore` subscription to
+    `matchMedia("(min-width: 768px)")` (React's recommended pattern for external mutable
+    state — also sidesteps a `set-state-in-effect` lint error the naive
+    `useState`+`useEffect` version had) driving a plain inline `transform: translateX()`,
+    with no CSS breakpoint classes involved in the toggle at all. This is a single, JS-owned
+    source of truth for "should the drawer be visible," which was easier to verify correct
+    at the DOM level than a two-systems (CSS breakpoint + JS click state) approach.
+  - **Flagging for a manual check:** because of the compositing limitation above, the
+    drawer's actual sliding animation was never visually confirmed in this session, only its
+    underlying DOM/style state at rest. Recommend opening the app on an actual phone or a
+    resized real browser window and confirming the hamburger menu visually slides open/closed
+    as expected.
+- **6.2** `components/catalog/catalog-manager.tsx`, `components/catalog/material-settings.tsx`,
+  `components/resources/resource-manager.tsx`, `components/settings/company-manager.tsx`: the
+  fixed `gridTemplateColumns: "280px 1fr"` list+editor split (four separate settings/catalog
+  screens, all the same pattern) now stacks to one column below `md` via
+  `grid-cols-1 md:grid-cols-[280px_1fr]`. Also converted the same fixed-2-column pattern in
+  `csv-import.tsx` and `product-editor.tsx` (3 spots) to `grid-cols-1 sm:grid-cols-2`.
+  Production Queue's row header (`production-queue.tsx`) gained `flex-wrap` so the WO
+  number/company/expedited tag/status/piece-count/due-date/claimed-by cluster wraps onto
+  multiple lines on narrow widths instead of squeezing or overflowing. Data tables
+  (`components/ui/data-table.tsx`, used by Catalog and others) already had `overflow-x: auto`
+  containment — confirmed via code read, no change needed.
+- **6.3** Orders' list+detail split (`app/(app)/orders/page.tsx`, via the pre-existing
+  `components/ui/master-detail.tsx`) already hid the list and showed only the detail pane
+  below `md` — but had no way back to the list except the browser's own back button, which
+  isn't a reliable or discoverable mobile pattern. Added a `md:hidden` "← Back to Orders" link
+  above the detail pane that preserves the list's current search/status/page filters (drops
+  only `id`). Production Queue doesn't need equivalent treatment — it's a single-pane
+  accordion (inline expand per row), not a list+detail split. Catalog's product detail is
+  also inline-expand-in-table (via `DataTable`'s `expandedContent`), not a split view either.
+- **6.4** `components/ui/dialog.tsx` (shared by every modal in the app — Accept Order, QC,
+  Recut, Invoice Verify, Print Labels, Finalize confirmation, etc.): was `w-full max-w-lg`
+  with no height cap, meaning on mobile it touched both screen edges with zero margin, and
+  any modal taller than the viewport (several of the above have enough fields to run tall on
+  a short phone screen) would clip its header and/or Save button with no way to scroll to
+  them. Changed to `w-[calc(100%-2rem)]` (consistent side margins at any width) plus
+  `max-h-[85vh] overflow-y-auto`. This is a single shared-component fix — confirmed it
+  composes correctly with the 4 call sites that already pass their own `style={{ maxWidth }}`
+  override (a different CSS property, doesn't conflict). General spot-check: New Order
+  (`new-order.tsx`) had no fixed-width grids to begin with; the invite-user row in
+  `company-manager.tsx` has fixed-width inputs but its container already had `flexWrap: wrap`,
+  so it degrades acceptably.
+- **6.5** Manual verification: performed what this session's tooling allowed — DOM-state,
+  computed-style (for non-transform properties, which were reliably readable), and
+  `matchMedia` checks across desktop/mobile viewport sizes for the sidebar, hamburger, and
+  drawer backdrop. Could not get a real screenshot or pixel-level confirmation (the pane
+  reports it isn't compositing frames), and did not attempt to re-verify Phases 1–5's UI
+  beyond what the Phase 1-4 audit already covered via static code reading. Recommend a real
+  manual pass on an actual device for: the sidebar drawer's slide animation specifically (see
+  6.1's flag above), and a general skim of Orders/Production/Catalog/Settings at ~375px and
+  ~768px.
+
+Verification this session: `npx tsc --noEmit` clean, full suite 197/197 passing, `npx eslint`
+clean on every changed/new file — including fixing two new `react-hooks/set-state-in-effect`
+errors introduced by this phase's own code (`app-shell.tsx`'s route-change-closes-drawer logic,
+switched to React's render-time state-adjustment pattern; `sidebar.tsx`'s matchMedia listener,
+switched to `useSyncExternalStore` as noted above). Left two *pre-existing* instances of the
+same lint error untouched (`topbar.tsx`, and a Phase-4-authored effect in
+`production-queue.tsx`) since neither was touched by this phase's diff — out of scope here,
+same reasoning as the `company-manager.tsx` cleanup earlier this session.
+
+**This closes out the 6-phase revision plan.** All items across Phases 1–6 are implemented per
+this doc; the standing items still needing the user's own action are: apply
+`supabase/migrations/0011_company_address.sql` to any *other* database this app runs against
+(already applied to this session's connected DB), and a real-device/real-browser manual pass
+per 6.5 above — this plan's static-code-and-DOM verification has been thorough throughout, but
+has never been a substitute for someone actually looking at the running app.
 
 ### 2026-08-09 — Independent audit of Phases 1-4 (39 items) vs. actual code
 

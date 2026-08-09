@@ -1,5 +1,6 @@
 "use client";
 
+import * as React     from "react";
 import Link          from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -17,6 +18,18 @@ import {
 import { cn }         from "@/lib/utils";
 import { can }        from "@/lib/authz/policy";
 import type { AppUser } from "@/lib/db/schema";
+
+// ── Desktop breakpoint (useSyncExternalStore source) ────────────
+
+function subscribeToDesktopMq(callback: () => void) {
+  const mq = window.matchMedia("(min-width: 768px)");
+  mq.addEventListener("change", callback);
+  return () => mq.removeEventListener("change", callback);
+}
+
+function getDesktopMqSnapshot() {
+  return window.matchMedia("(min-width: 768px)").matches;
+}
 
 type NavItem = {
   label:  string;
@@ -70,26 +83,51 @@ interface SidebarProps {
   signOutAction: () => Promise<void>;
   previewBanner?: React.ReactNode;
   badges?: { orders?: number; production?: number };
+  /** Mobile drawer state — ignored at the md+ breakpoint, where the sidebar
+   *  is always visible (see the md:translate-x-0 override below). */
+  open?: boolean;
+  onClose?: () => void;
 }
 
-export function Sidebar({ user, signOutAction, previewBanner, badges }: SidebarProps) {
+export function Sidebar({ user, signOutAction, previewBanner, badges, open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const nav      = buildNav(user, badges);
 
+  // The drawer's visibility is resolved in JS (matchMedia) rather than via a
+  // CSS breakpoint class, so it composes with the click-driven `open` state
+  // through one single source of truth instead of two independent
+  // mechanisms fighting over the same transform. useSyncExternalStore (not
+  // useState+useEffect) is the API React recommends for subscribing to
+  // external mutable state like a MediaQueryList — it also naturally
+  // supplies the pre-hydration server snapshot (false/closed), avoiding an
+  // extra effect-driven render.
+  const isDesktop = React.useSyncExternalStore(subscribeToDesktopMq, getDesktopMqSnapshot, () => false);
+
+  const visible = isDesktop || !!open;
+
   return (
-    <aside
-      style={{
-        position:       "fixed",
-        inset:          "0 auto 0 0",
-        width:          "var(--sidebar-w)",
-        background:     "var(--color-panel)",
-        borderRight:    "1px solid var(--color-border-default)",
-        display:        "flex",
-        flexDirection:  "column",
-        zIndex:         40,
-        overflow:       "hidden",
-      }}
-    >
+    <>
+      {/* Mobile backdrop — only ever rendered/visible below md, and only while open */}
+      {open && !isDesktop && (
+        <div
+          aria-hidden
+          onClick={onClose}
+          className="fixed inset-0 z-40 bg-black/40"
+        />
+      )}
+      <aside
+        className="fixed inset-y-0 left-0 z-50"
+        style={{
+          transform:      visible ? "translateX(0)" : "translateX(-100%)",
+          transition:     "transform 0.2s ease",
+          width:          "var(--sidebar-w)",
+          background:     "var(--color-panel)",
+          borderRight:    "1px solid var(--color-border-default)",
+          display:        "flex",
+          flexDirection:  "column",
+          overflow:       "hidden",
+        }}
+      >
       {/* Logo */}
       <div
         style={{
@@ -103,6 +141,7 @@ export function Sidebar({ user, signOutAction, previewBanner, badges }: SidebarP
       >
         <Link
           href="/dashboard"
+          onClick={onClose}
           style={{
             fontSize:     "var(--text-md)",
             fontWeight:   "var(--weight-bold)",
@@ -128,6 +167,7 @@ export function Sidebar({ user, signOutAction, previewBanner, badges }: SidebarP
             <Link
               key={href}
               href={href}
+              onClick={onClose}
               style={{
                 display:        "flex",
                 alignItems:     "center",
@@ -234,6 +274,7 @@ export function Sidebar({ user, signOutAction, previewBanner, badges }: SidebarP
           </form>
         </div>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

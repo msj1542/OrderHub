@@ -59,14 +59,7 @@ export function CatalogManager({ products, materials, canImport }: Props) {
       </div>
 
       <TabsContent value="products">
-        <div
-          style={{
-            display:             "grid",
-            gridTemplateColumns: "280px 1fr",
-            gap:                 "var(--space-4)",
-            alignItems:          "start",
-          }}
-        >
+        <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-[var(--space-4)] items-start">
           {/* Product list */}
           <section
             style={{

@@ -56,12 +56,8 @@ export function CsvImport() {
         )}
 
         <div
-          style={{
-            display:             "grid",
-            gridTemplateColumns: "repeat(2, 1fr)",
-            gap:                 "var(--space-4)",
-            marginBottom:        "var(--space-5)",
-          }}
+          className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-4)]"
+          style={{ marginBottom: "var(--space-5)" }}
         >
           <div>
             <label style={{ display: "block", fontSize: "var(--text-sm)", fontWeight: "var(--weight-medium)", marginBottom: "var(--space-2)" }}>

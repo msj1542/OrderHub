@@ -1,7 +1,6 @@
 import { requireUser, getPreviewContext } from "@/lib/auth";
 import { exitPreviewAction, signOutAction } from "./actions";
-import { Sidebar }       from "@/components/layout/sidebar";
-import { Topbar }        from "@/components/layout/topbar";
+import { AppShell }      from "@/components/layout/app-shell";
 import { PreviewBanner } from "@/components/layout/preview-banner";
 import { getUnreadCount } from "@/lib/notifications/service";
 import { getSidebarBadges } from "@/lib/orders/service";
@@ -36,41 +35,19 @@ export default async function AppLayout({
     : user;
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
-      {/* Sidebar */}
-      <Sidebar
-        user={sidebarUser as typeof user}
-        signOutAction={signOutAction}
-        badges={sidebarBadges}
-        previewBanner={
-          preview ? (
-            <PreviewBanner preview={preview} exitAction={exitPreviewAction} />
-          ) : undefined
-        }
-      />
-
-      {/* Main area */}
-      <div
-        style={{
-          marginLeft:    "var(--sidebar-w)",
-          flex:          1,
-          display:       "flex",
-          flexDirection: "column",
-          minWidth:      0,
-        }}
-      >
-        <Topbar user={user} unreadCount={unreadCount} signOutAction={signOutAction} />
-
-        <main
-          style={{
-            flex:       1,
-            padding:    "var(--space-6)",
-            background: "var(--color-canvas)",
-          }}
-        >
-          {children}
-        </main>
-      </div>
-    </div>
+    <AppShell
+      sidebarUser={sidebarUser as typeof user}
+      topbarUser={user}
+      signOutAction={signOutAction}
+      badges={sidebarBadges}
+      unreadCount={unreadCount}
+      previewBanner={
+        preview ? (
+          <PreviewBanner preview={preview} exitAction={exitPreviewAction} />
+        ) : undefined
+      }
+    >
+      {children}
+    </AppShell>
   );
 }

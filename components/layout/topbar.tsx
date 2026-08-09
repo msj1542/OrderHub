@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
-import { Bell, LogOut, Settings } from "lucide-react";
+import { Bell, LogOut, Menu, Settings } from "lucide-react";
 import Link            from "next/link";
 import type { AppUser } from "@/lib/db/schema";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -35,9 +35,10 @@ interface TopbarProps {
   user: AppUser;
   unreadCount?: number;
   signOutAction: () => Promise<void>;
+  onMenuClick?: () => void;
 }
 
-export function Topbar({ user, unreadCount: initialUnreadCount = 0, signOutAction }: TopbarProps) {
+export function Topbar({ user, unreadCount: initialUnreadCount = 0, signOutAction, onMenuClick }: TopbarProps) {
   const pathname = usePathname();
   const title    = pageTitle(pathname);
 
@@ -82,6 +83,26 @@ export function Topbar({ user, unreadCount: initialUnreadCount = 0, signOutActio
         zIndex:      30,
       }}
     >
+      {/* Mobile nav toggle */}
+      <button
+        type="button"
+        onClick={onMenuClick}
+        aria-label="Open navigation menu"
+        className="flex md:hidden items-center justify-center hover:bg-[var(--color-sunken)] hover:text-[var(--color-text-primary)] transition-colors"
+        style={{
+          width:        32,
+          height:       32,
+          flexShrink:   0,
+          background:   "transparent",
+          border:       "none",
+          cursor:       "pointer",
+          color:        "var(--color-text-muted)",
+          borderRadius: "var(--radius-md)",
+        }}
+      >
+        <Menu size={20} strokeWidth={2} />
+      </button>
+
       {/* Page title */}
       <h1
         style={{

@@ -83,12 +83,8 @@ export function ProductEditor({ product, materials }: Props) {
           )}
 
           <div
-            style={{
-              display:             "grid",
-              gridTemplateColumns: "repeat(2, 1fr)",
-              gap:                 "var(--space-4)",
-              marginBottom:        "var(--space-5)",
-            }}
+            className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-4)]"
+            style={{ marginBottom: "var(--space-5)" }}
           >
             <div>
               <Label htmlFor="brand">Brand</Label>
@@ -240,12 +236,8 @@ export function ProductEditor({ product, materials }: Props) {
 
           {/* Price revision */}
           <div
-            style={{
-              display:             "grid",
-              gridTemplateColumns: "repeat(2, 1fr)",
-              gap:                 "var(--space-4)",
-              marginBottom:        "var(--space-5)",
-            }}
+            className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-4)]"
+            style={{ marginBottom: "var(--space-5)" }}
           >
             <div>
               <Label htmlFor="revision">Price revision</Label>
@@ -320,12 +312,8 @@ export function ProductEditor({ product, materials }: Props) {
           <form action={uploadAction}>
             <input type="hidden" name="productId" value={product.id} />
             <div
-              style={{
-                display:             "grid",
-                gridTemplateColumns: "repeat(2, 1fr)",
-                gap:                 "var(--space-4)",
-                marginBottom:        "var(--space-4)",
-              }}
+              className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-4)]"
+              style={{ marginBottom: "var(--space-4)" }}
             >
               <div>
                 <Label htmlFor="upload-label">Display title</Label>

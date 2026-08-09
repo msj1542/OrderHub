@@ -26,7 +26,7 @@ export function CompanyManager({ companies, canPreview, enterPreviewAction }: Pr
   const selected = companies.find((c) => c.id === selectedId);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: "var(--space-4)", alignItems: "start" }}>
+    <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-[var(--space-4)] items-start">
       <section style={{ background: "var(--color-panel)", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-lg)", overflow: "hidden" }}>
         <div style={{ padding: "var(--space-4) var(--space-5)", borderBottom: "1px solid var(--color-border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>

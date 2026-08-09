@@ -18,14 +18,7 @@ export function MaterialSettingsPanel({ materials }: Props) {
   const selected = materials.find((m) => m.id === selectedId);
 
   return (
-    <div
-      style={{
-        display:             "grid",
-        gridTemplateColumns: "280px 1fr",
-        gap:                 "var(--space-4)",
-        alignItems:          "start",
-      }}
-    >
+    <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-[var(--space-4)] items-start">
       {/* List */}
       <section
         style={{

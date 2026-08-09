@@ -8,7 +8,7 @@ import { OrdersWorkspace } from "@/components/orders/orders-workspace";
 import { OrderDetail } from "@/components/orders/order-detail";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, ChevronLeft } from "lucide-react";
 import Link from "next/link";
 
 export const metadata = { title: "Orders — Ordering Hub" };
@@ -78,8 +78,31 @@ export default async function OrdersPage({
     </div>
   );
 
+  // Preserves the list's current filters when navigating back to it — only
+  // `id` is dropped.
+  const backParams = new URLSearchParams();
+  if (search) backParams.set("q", search);
+  backParams.set("status", status);
+  if (page > 1) backParams.set("page", String(page));
+  const backHref = `/orders?${backParams.toString()}`;
+
   const detail = selectedOrder ? (
-    <OrderDetail order={selectedOrder} user={user} />
+    <div className="flex flex-col h-full min-h-0">
+      {/* MasterDetail hides the list pane entirely below md while a detail
+          is selected, so mobile needs an explicit way back to it. */}
+      <div className="md:hidden border-b border-[var(--color-border-subtle)] px-[var(--space-4)] py-[var(--space-3)]">
+        <Link
+          href={backHref}
+          className="inline-flex items-center gap-[var(--space-2)] text-[var(--text-sm)] font-[var(--weight-medium)]"
+          style={{ color: "var(--color-brand)", textDecoration: "none" }}
+        >
+          <ChevronLeft size={16} /> Back to Orders
+        </Link>
+      </div>
+      <div className="flex-1 overflow-auto min-h-0">
+        <OrderDetail order={selectedOrder} user={user} />
+      </div>
+    </div>
   ) : (
     <EmptyState
       icon={<ClipboardList size={32} />}

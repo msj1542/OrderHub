@@ -24,7 +24,7 @@ export function ResourceManager({ categories, resources }: Props) {
   const selected = resources.find((r) => r.id === selectedId);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: "var(--space-4)", alignItems: "start" }}>
+    <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-[var(--space-4)] items-start">
       {/* List + category management */}
       <section
         style={{

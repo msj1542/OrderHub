@@ -498,7 +498,7 @@ export function ProductionQueue({
                 >
                   {/* Row header */}
                   <button
-                    className="w-full text-left px-[var(--space-5)] py-[var(--space-4)] flex items-center gap-[var(--space-4)] hover:bg-[var(--color-sunken)] transition-colors"
+                    className="w-full text-left px-[var(--space-5)] py-[var(--space-4)] flex flex-wrap items-center gap-[var(--space-4)] hover:bg-[var(--color-sunken)] transition-colors"
                     onClick={() => handleExpand(wo.id)}
                   >
                     <div className="flex-1 flex flex-wrap items-center gap-[var(--space-3)]">
