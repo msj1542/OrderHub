@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath }   from "next/cache";
-import { requireUser }      from "@/lib/auth";
+import { requireUser, getPreviewContext, assertNotPreview } from "@/lib/auth";
 import { can }              from "@/lib/authz/policy";
 import {
   createMaterial,
@@ -22,17 +22,18 @@ export async function saveMaterialAction(
   _prev: MaterialState,
   formData: FormData,
 ): Promise<MaterialState> {
-  const user = await requireUser();
+  const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
   if (!can(user, "materials:manage")) return { error: "Not authorized." };
 
   const id       = formData.get("id") as string | null;
   const code     = (formData.get("code") as string).trim();
   const name     = (formData.get("name") as string).trim();
-  const isActive = formData.get("isActive") === "true";
+  const isActive = formData.getAll("isActive").includes("true");
 
   if (!code || !name) return { error: "Code and name are required." };
 
   try {
+    assertNotPreview(preview);
     if (id) {
       await updateMaterial(id, { code, name, isActive });
       revalidatePath("/settings/materials");
@@ -60,7 +61,7 @@ export async function addRollAction(
   _prev: RollState,
   formData: FormData,
 ): Promise<RollState> {
-  const user = await requireUser();
+  const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
   if (!can(user, "materials:manage")) return { error: "Not authorized." };
 
   const materialId   = formData.get("materialId") as string;
@@ -82,6 +83,7 @@ export async function addRollAction(
   if (!Number.isFinite(l) || l <= 0) return { error: "Length must be a positive number." };
 
   try {
+    assertNotPreview(preview);
     await addRollWidth({
       materialId,
       widthIn:      w.toFixed(4),
@@ -101,7 +103,7 @@ export async function updateRollAction(
   _prev: RollState,
   formData: FormData,
 ): Promise<RollState> {
-  const user = await requireUser();
+  const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
   if (!can(user, "materials:manage")) return { error: "Not authorized." };
 
   const id           = formData.get("id") as string;
@@ -109,11 +111,12 @@ export async function updateRollAction(
   const lengthFt     = formData.get("lengthFt") as string;
   const rollCost     = formData.get("rollCost") as string;
   const handlingCost = formData.get("handlingCost") as string;
-  const isActive     = formData.get("isActive") === "true";
+  const isActive     = formData.getAll("isActive").includes("true");
 
   if (!id) return { error: "Roll ID is required." };
 
   try {
+    assertNotPreview(preview);
     await updateRollWidth(id, {
       widthIn:      widthIn ? parseFloat(widthIn).toFixed(4) : undefined,
       lengthFt:     lengthFt ? parseFloat(lengthFt).toFixed(4) : undefined,

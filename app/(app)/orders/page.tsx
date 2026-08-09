@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireEffectiveUser } from "@/lib/auth";
 import { can, canAny } from "@/lib/authz/policy";
 import { redirect } from "next/navigation";
 import { listOrders, getOrder } from "@/lib/orders/service";
@@ -20,7 +20,7 @@ export default async function OrdersPage({
 }: {
   searchParams: Promise<{ id?: string; q?: string; status?: string; page?: string }>;
 }) {
-  const user = await requireUser();
+  const user = await requireEffectiveUser();
   if (
     !canAny(user, [
       "order:create", "order:accept", "order:claim",
@@ -33,13 +33,19 @@ export default async function OrdersPage({
   const params    = await searchParams;
   const selectedId = params.id;
   const search     = params.q ?? "";
-  const status     = (params.status ?? "") as OrderStatus | "";
+  // No status param at all → default to "active" (hides closed/released/
+  // invoiced/canceled clutter). An explicit "all" is how the user opts back
+  // into seeing everything; a specific status is passed through as-is.
+  const status: OrderStatus | "active" | "all" =
+    params.status === undefined || params.status === "" ? "active"
+    : params.status === "all" ? "all"
+    : (params.status as OrderStatus);
   const page       = Math.max(1, Number(params.page) || 1);
 
   const [{ orders, total }, selectedOrder] = await Promise.all([
     listOrders(user, {
       search: search || undefined,
-      status: status || undefined,
+      status: status === "all" ? undefined : status,
       page,
       pageSize: PAGE_SIZE,
     }),

@@ -135,6 +135,7 @@ export function CatalogManager({ products, materials, canImport }: Props) {
                 <button
                   key={p.id}
                   onClick={() => setSelectedId(p.id)}
+                  className={p.id !== selectedId ? "hover:bg-[var(--color-sunken)] transition-colors" : undefined}
                   style={{
                     display:    "block",
                     width:      "100%",

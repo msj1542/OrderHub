@@ -20,9 +20,16 @@ import {
 import type { OrderFull } from "@/lib/db/schema";
 
 const NOT_REORDERABLE: string[] = ["draft", "canceled"];
-const SUPPLEMENTAL_ELIGIBLE: string[] = [
-  "accepted", "in_fulfillment", "fulfillment_completed",
+// Internal coordinators only see Reorder once there's nothing left to manage
+// on the current order — while it's still moving through acceptance/
+// production, Reorder is premature clutter next to the real next action.
+const INTERNAL_REORDER_ELIGIBLE: string[] = [
+  "fulfillment_completed", "ready_for_pickup", "released", "invoiced", "closed",
 ];
+// Once fulfillment is complete, the order is being finalized for pickup —
+// adding items at that point would require re-opening production, so the
+// window closes there.
+const SUPPLEMENTAL_ELIGIBLE: string[] = ["accepted", "in_fulfillment"];
 
 type Props = {
   order:        OrderFull;
@@ -34,7 +41,6 @@ type Props = {
   canSubmit:    boolean;
   canRelease:   boolean;
   canQC:        boolean;
-  canClaim:     boolean;
   canInvoice:   boolean;
   canCreate:    boolean;
   isInternal:   boolean;
@@ -50,7 +56,6 @@ export function OrderActions({
   canSubmit,
   canRelease,
   canQC,
-  canClaim,
   canInvoice,
   canCreate,
   isInternal,
@@ -59,6 +64,7 @@ export function OrderActions({
   const [dialog, setDialog] = React.useState<string | null>(null);
   const [reason, setReason]   = React.useState("");
   const [expectedDate, setExpectedDate] = React.useState(order.expectedCompletionDate ?? "");
+  const [acceptRequestedDate, setAcceptRequestedDate] = React.useState(order.requestedDate ?? "");
   const [error, setError]     = React.useState<string | null>(null);
   const [message, setMessage] = React.useState<string | null>(null);
 
@@ -96,13 +102,6 @@ export function OrderActions({
         <Button size="sm" onClick={() => setDialog("accept")}>Accept Order</Button>
       )}
 
-      {/* Claim / Start fulfillment */}
-      {canClaim && (status === "accepted" || status === "in_fulfillment") && (
-        <Button size="sm" onClick={() => run(() => acceptOrderAction(order.id, "claim"))}>
-          {status === "accepted" ? "Claim" : "Continue Fulfillment"}
-        </Button>
-      )}
-
       {/* Invoice verification */}
       {canInvoice && status === "fulfillment_completed" && (
         <Button size="sm" onClick={() => setDialog("invoice_verify")}>Verify Invoice</Button>
@@ -125,8 +124,10 @@ export function OrderActions({
         </Button>
       )}
 
-      {/* Request cancellation (external) */}
-      {canRequestCancel && !hasCancelRequest && (status === "submitted" || status === "accepted") && (
+      {/* Request cancellation — external only; internal coordinators cancel
+          directly (see "Cancel Order" above), and it isn't actionable for
+          the customer until the order has actually been accepted. */}
+      {!isInternal && canRequestCancel && !hasCancelRequest && status === "accepted" && (
         <Button size="sm" variant="secondary" onClick={() => setDialog("request_cancel")}>
           Request Cancellation
         </Button>
@@ -146,17 +147,21 @@ export function OrderActions({
         </Button>
       )}
 
-      {/* Reorder — external users only see this after accepted */}
-      {canCreate && !NOT_REORDERABLE.includes(status) && (isInternal || !["submitted"].includes(status)) && (
+      {/* Reorder — external sees this any time after acceptance; internal
+          coordinators only once there's nothing left to act on for the
+          current order (it would otherwise compete with Claim/QC/Invoice). */}
+      {canCreate && !NOT_REORDERABLE.includes(status) &&
+        (isInternal ? INTERNAL_REORDER_ELIGIBLE.includes(status) : status !== "submitted") && (
         <Button size="sm" variant="secondary" onClick={() => router.push(`/orders/new?reorder_from=${order.id}`)}>
           Reorder
         </Button>
       )}
 
-      {/* Add supplemental order */}
-      {canCreate && isInternal && !order.supplementalToOrderId && SUPPLEMENTAL_ELIGIBLE.includes(status) && (
+      {/* Add to Order — open only while there's still production left to
+          fold new items into; closes once the invoice has been verified. */}
+      {canCreate && !order.supplementalToOrderId && SUPPLEMENTAL_ELIGIBLE.includes(status) && (
         <Button size="sm" variant="secondary" onClick={() => router.push(`/orders/new?supplemental_to=${order.id}`)}>
-          Add Supplemental Order
+          Add to Order
         </Button>
       )}
 
@@ -180,22 +185,29 @@ export function OrderActions({
         description="Confirm the expected completion date before accepting."
         confirmLabel="Accept"
         variant="primary"
-        onConfirm={() => run(() => acceptOrderAction(order.id, "accept", expectedDate))}
+        onConfirm={() => run(() => acceptOrderAction(order.id, "accept", expectedDate, acceptRequestedDate))}
       >
         <div className="flex flex-col gap-[var(--space-3)]">
           {order.isExpedited && (
-            <div className="rounded-[var(--radius-md)] bg-[var(--status-urgent-bg)] border border-[var(--status-urgent-border)] px-[var(--space-4)] py-[var(--space-3)]">
+            <div className="rounded-[var(--radius-md)] bg-[var(--status-urgent-bg)] border border-[var(--status-urgent-border)] px-[var(--space-4)] py-[var(--space-3)] flex flex-col gap-[var(--space-2)]">
               <p className="text-[var(--text-sm)] font-[var(--weight-medium)] text-[var(--status-urgent-text)]">
                 Expedited Order
               </p>
-              {order.requestedDate && (
-                <p className="text-[var(--text-sm)] text-[var(--status-urgent-text)] mt-[var(--space-1)]">
-                  Requested date: {new Date(order.requestedDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                </p>
-              )}
+              <Label htmlFor="acceptRequestedDate" className="text-[var(--status-urgent-text)]">
+                Requested Date
+              </Label>
+              <Input
+                id="acceptRequestedDate"
+                type="date"
+                value={acceptRequestedDate}
+                onChange={(e) => setAcceptRequestedDate(e.target.value)}
+              />
+              <p className="text-[var(--text-xs)] text-[var(--status-urgent-text)]">
+                Adjust this if the requested date can&apos;t be met as asked.
+              </p>
             </div>
           )}
-          <Label htmlFor="expectedDate">Expected Completion Date</Label>
+          <Label htmlFor="expectedDate">Default Due Date</Label>
           <Input
             id="expectedDate"
             type="date"

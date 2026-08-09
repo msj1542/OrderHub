@@ -34,7 +34,7 @@ export function ResourceBrowse({ categories, resources }: Props) {
             <h2 className="text-[var(--text-base)] font-[var(--weight-semibold)] mb-[var(--space-3)]">
               {category.name}
             </h2>
-            <div className="grid gap-[var(--space-3)]" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
+            <div className="grid gap-[var(--space-3)]" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
               {items.map((r) => (
                 <a
                   key={r.id}

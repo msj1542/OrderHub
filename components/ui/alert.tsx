@@ -14,27 +14,27 @@ interface AlertProps {
 
 const STYLES: Record<AlertVariant, { bg: string; border: string; color: string; icon: React.ReactNode }> = {
   info: {
-    bg: "var(--color-info-subtle)",
-    border: "var(--color-info-border)",
-    color: "var(--color-info)",
+    bg: "var(--status-info-bg)",
+    border: "var(--status-info-border)",
+    color: "var(--status-info-text)",
     icon: <Info size={15} />,
   },
   success: {
-    bg: "var(--color-success-subtle)",
-    border: "var(--color-success-border)",
-    color: "var(--color-success)",
+    bg: "var(--status-success-bg)",
+    border: "var(--status-success-border)",
+    color: "var(--status-success-text)",
     icon: <CheckCircle2 size={15} />,
   },
   warning: {
-    bg: "var(--color-warning-subtle)",
-    border: "var(--color-warning-border)",
-    color: "var(--color-warning)",
+    bg: "var(--status-warning-bg)",
+    border: "var(--status-warning-border)",
+    color: "var(--status-warning-text)",
     icon: <AlertCircle size={15} />,
   },
   danger: {
-    bg: "var(--color-danger-subtle)",
-    border: "var(--color-danger-border)",
-    color: "var(--color-danger)",
+    bg: "var(--status-danger-bg)",
+    border: "var(--status-danger-border)",
+    color: "var(--status-danger-text)",
     icon: <XCircle size={15} />,
   },
 };

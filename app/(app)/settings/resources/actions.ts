@@ -24,7 +24,7 @@ export async function saveCategoryAction(
 
     const id                = (formData.get("id") as string) || null;
     const name               = (formData.get("name") as string)?.trim();
-    const pricingRestricted  = formData.get("pricingRestricted") === "true";
+    const pricingRestricted  = formData.getAll("pricingRestricted").includes("true");
 
     if (!name) return { error: "Category name is required." };
 
@@ -58,9 +58,9 @@ export async function saveResourceAction(
     const categoryId        = formData.get("categoryId") as string;
     const title              = (formData.get("title") as string)?.trim();
     const description        = (formData.get("description") as string)?.trim();
-    const isActive            = formData.get("isActive") === "true";
-    const customerVisible     = formData.get("customerVisible") === "true";
-    const pricingRestricted   = formData.get("pricingRestricted") === "true";
+    const isActive            = formData.getAll("isActive").includes("true");
+    const customerVisible     = formData.getAll("customerVisible").includes("true");
+    const pricingRestricted   = formData.getAll("pricingRestricted").includes("true");
 
     if (!categoryId || !title) return { error: "Category and title are required." };
 

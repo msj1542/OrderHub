@@ -12,11 +12,16 @@ const KEY_MAP: Record<keyof OperationsSettingsInput, string> = {
   businessTimezone:   "business_timezone",
   rushFeeMode:        "rush_fee_mode",
   rushFeeValue:       "rush_fee_value",
+  rushFeeTierMaxPercent: "rush_fee_tier_max_percent",
+  rushFeeTierMinPercent: "rush_fee_tier_min_percent",
   cutoffWeekday:      "cutoff_weekday",
   cutoffTime:         "cutoff_time",
   completionWeekday:  "completion_weekday",
   completionTime:     "completion_time",
+  completionWeekOffset: "completion_week_offset",
   duplicateWindowDays: "duplicate_window_days",
+  labelWidthIn:       "label_width_in",
+  labelHeightIn:      "label_height_in",
 };
 
 export async function updateOperationsSettings(

@@ -2,50 +2,35 @@
  * Invoice verification — pure validation logic.
  *
  * Fixes audit issue #5 ("invoice '3 matches' are theater"): the accounting
- * user attests against the *actual* order lines (shown in the UI modal),
- * and a discrepancy reason is mandatory whenever the entered invoice total
- * doesn't match the order's grand total within tolerance.
+ * user attests against the *actual* order lines (shown in the UI modal).
+ *
+ * The invoice total is never retyped by hand — the order's grand total is
+ * shown read-only as the expected amount, and the verifying user explicitly
+ * flags whether the invoice they're holding differs from it. A discrepancy
+ * reason is mandatory whenever that flag is set.
  */
 
-const TOLERANCE = 0.005;
-
 export type InvoiceVerificationInput = {
-  invoiceNumber:      string;
-  invoiceUrl:         string;
-  invoiceTotal:       number | null;
-  discrepancyReason:  string;
-  attested:           boolean;
+  invoiceNumber:     string;
+  invoiceUrl:        string;
+  hasDiscrepancy:    boolean;
+  discrepancyReason: string;
+  attested:          boolean;
 };
 
 /**
  * Returns an error message if the invoice verification input is invalid,
  * or null if it's ready to submit.
  */
-export function validateInvoiceVerification(
-  input: InvoiceVerificationInput,
-  grandTotal: number,
-): string | null {
+export function validateInvoiceVerification(input: InvoiceVerificationInput): string | null {
   if (!input.invoiceNumber.trim()) {
     return "Enter the invoice number.";
   }
-  if (input.invoiceTotal !== null && (!Number.isFinite(input.invoiceTotal) || input.invoiceTotal < 0)) {
-    return "Invoice total must be a valid non-negative currency amount.";
-  }
-  if (
-    input.invoiceTotal !== null &&
-    Math.abs(input.invoiceTotal - grandTotal) > TOLERANCE &&
-    !input.discrepancyReason.trim()
-  ) {
+  if (input.hasDiscrepancy && !input.discrepancyReason.trim()) {
     return "Document the invoice-total discrepancy before approval.";
   }
   if (!input.attested) {
     return "You must attest that the invoice has been verified against the order lines.";
   }
   return null;
-}
-
-/** True if the entered invoice total differs from the order's grand total beyond tolerance. */
-export function hasDiscrepancy(invoiceTotal: number | null, grandTotal: number): boolean {
-  if (invoiceTotal === null) return false;
-  return Math.abs(invoiceTotal - grandTotal) > TOLERANCE;
 }

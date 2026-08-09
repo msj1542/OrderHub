@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath }      from "next/cache";
-import { requireUser }         from "@/lib/auth";
+import { requireUser, getPreviewContext, assertNotPreview } from "@/lib/auth";
 import { can }                 from "@/lib/authz/policy";
 import {
   createProduct,
@@ -31,7 +31,7 @@ export async function saveProductAction(
   _prev: SaveProductState,
   formData: FormData,
 ): Promise<SaveProductState> {
-  const user = await requireUser();
+  const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
   if (!can(user, "catalog:manage")) return { error: "Not authorized." };
 
   const id              = formData.get("id") as string | null;
@@ -45,8 +45,8 @@ export async function saveProductAction(
   const includedPieces  = (formData.get("includedPieces") as string) || null;
   const patternLengthIn = (formData.get("patternLengthIn") as string) || null;
   const requiredRollWidthIn = (formData.get("requiredRollWidthIn") as string) || null;
-  const isActive        = formData.get("isActive") === "true";
-  const customerVisible = formData.get("customerVisible") === "true";
+  const isActive        = formData.getAll("isActive").includes("true");
+  const customerVisible = formData.getAll("customerVisible").includes("true");
   const revision        = (formData.get("revision") as string) || null;
   const effectiveDate   = (formData.get("effectiveDate") as string) || new Date().toISOString().slice(0, 10);
 
@@ -59,6 +59,7 @@ export async function saveProductAction(
   }
 
   try {
+    assertNotPreview(preview);
     let productId: string;
 
     if (id) {
@@ -111,12 +112,12 @@ export async function uploadProductFileAction(
   _prev: UploadFileState,
   formData: FormData,
 ): Promise<UploadFileState> {
-  const user = await requireUser();
+  const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
   if (!can(user, "catalog:manage")) return { error: "Not authorized." };
 
   const productId  = formData.get("productId") as string;
   const label      = formData.get("label") as string;
-  const isThumbnail = formData.get("isThumbnail") === "true";
+  const isThumbnail = formData.getAll("isThumbnail").includes("true");
   const file        = formData.get("file") as File | null;
 
   if (!productId || !label || !file) {
@@ -124,6 +125,7 @@ export async function uploadProductFileAction(
   }
 
   try {
+    assertNotPreview(preview);
     const supabase  = await createClient();
     const ext       = file.name.split(".").pop();
     const filePath  = `products/${productId}/${Date.now()}.${ext}`;
@@ -154,8 +156,9 @@ export async function uploadProductFileAction(
 // ── Set thumbnail ─────────────────────────────────────────────
 
 export async function setThumbnailAction(productId: string, fileId: string) {
-  const user = await requireUser();
+  const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
   if (!can(user, "catalog:manage")) throw new Error("Not authorized.");
+  assertNotPreview(preview);
 
   await setProductThumbnail(productId, fileId);
   revalidatePath("/catalog");
@@ -202,7 +205,7 @@ export async function applyImportAction(
   _prev: ImportState,
   formData: FormData,
 ): Promise<ImportState> {
-  const user = await requireUser();
+  const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
   if (!can(user, "catalog:manage")) return { error: "Not authorized." };
 
   const type       = formData.get("type") as "product" | "pricing";
@@ -212,6 +215,7 @@ export async function applyImportAction(
   if (!csvText || !type) return { error: "Import type and CSV content are required." };
 
   try {
+    assertNotPreview(preview);
     const rows = parseCsv(csvText);
     const { products: existing } = await listProducts({ includeInactive: true });
     const existingSkus = new Set(existing.map((p) => p.sku));

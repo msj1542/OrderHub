@@ -13,7 +13,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { formatMoney } from "@/lib/pricing/money";
-import { hasDiscrepancy } from "@/lib/orders/invoiceVerification";
 import type { OrderFull } from "@/lib/db/schema";
 
 type Props = {
@@ -23,7 +22,7 @@ type Props = {
   onSubmit: (input: {
     invoiceNumber: string;
     invoiceUrl: string;
-    invoiceTotal: number | null;
+    hasDiscrepancy: boolean;
     discrepancyReason: string;
     attested: boolean;
   }) => Promise<void>;
@@ -34,20 +33,20 @@ export function InvoiceVerifyModal({ open, order, onClose, onSubmit }: Props) {
 
   const [invoiceNumber, setInvoiceNumber]         = React.useState("");
   const [invoiceUrl, setInvoiceUrl]               = React.useState("");
-  const [invoiceTotalStr, setInvoiceTotalStr]     = React.useState(order.grandTotal);
+  const [hasDiscrepancy, setHasDiscrepancy]       = React.useState(false);
   const [discrepancyReason, setDiscrepancyReason] = React.useState("");
   const [attested, setAttested]                   = React.useState(false);
   const [busy, setBusy]                           = React.useState(false);
   const [error, setError]                         = React.useState<string | null>(null);
 
-  const invoiceTotal = invoiceTotalStr.trim() === "" ? null : parseFloat(invoiceTotalStr);
-  const discrepant = invoiceTotal !== null && Number.isFinite(invoiceTotal) && hasDiscrepancy(invoiceTotal, grandTotal);
-  const canAttest = invoiceNumber.trim().length > 0 && (!discrepant || discrepancyReason.trim().length > 0);
+  const canAttest =
+    invoiceNumber.trim().length > 0 &&
+    (!hasDiscrepancy || discrepancyReason.trim().length > 0);
 
   function reset() {
     setInvoiceNumber("");
     setInvoiceUrl("");
-    setInvoiceTotalStr(order.grandTotal);
+    setHasDiscrepancy(false);
     setDiscrepancyReason("");
     setAttested(false);
     setError(null);
@@ -61,7 +60,7 @@ export function InvoiceVerifyModal({ open, order, onClose, onSubmit }: Props) {
       await onSubmit({
         invoiceNumber,
         invoiceUrl,
-        invoiceTotal: Number.isFinite(invoiceTotal as number) ? invoiceTotal : null,
+        hasDiscrepancy,
         discrepancyReason,
         attested,
       });
@@ -111,11 +110,6 @@ export function InvoiceVerifyModal({ open, order, onClose, onSubmit }: Props) {
             </table>
           </div>
 
-          <div className="flex justify-between text-[var(--text-sm)] font-[var(--weight-semibold)] px-[var(--space-1)]">
-            <span>Order Grand Total</span>
-            <span>{formatMoney(grandTotal)}</span>
-          </div>
-
           <div className="grid grid-cols-2 gap-[var(--space-3)]">
             <div className="flex flex-col gap-[var(--space-2)]">
               <Label htmlFor="invoiceNumber">Invoice Number</Label>
@@ -127,32 +121,50 @@ export function InvoiceVerifyModal({ open, order, onClose, onSubmit }: Props) {
               />
             </div>
             <div className="flex flex-col gap-[var(--space-2)]">
-              <Label htmlFor="invoiceTotal">Invoice Total</Label>
-              <Input
-                id="invoiceTotal"
-                type="number"
-                step="0.01"
-                value={invoiceTotalStr}
-                onChange={(e) => setInvoiceTotalStr(e.target.value)}
-              />
+              <Label htmlFor="expectedInvoiceTotal">Expected Invoice Total</Label>
+              <div
+                id="expectedInvoiceTotal"
+                className="flex items-center h-9 px-[var(--space-3)] rounded-[var(--radius-md)] text-[var(--text-lg)] font-[var(--weight-bold)]"
+                style={{ background: "var(--color-sunken)" }}
+              >
+                {formatMoney(grandTotal)}
+              </div>
             </div>
           </div>
 
           <div className="flex flex-col gap-[var(--space-2)]">
-            <Label htmlFor="invoiceUrl">Invoice URL <span className="text-[var(--color-text-muted)] font-normal">(optional)</span></Label>
+            <Label htmlFor="invoiceUrl">
+              Invoice URL <span className="text-[var(--color-text-muted)] font-normal">(optional)</span>
+            </Label>
             <Input
               id="invoiceUrl"
               type="url"
               value={invoiceUrl}
               onChange={(e) => setInvoiceUrl(e.target.value)}
               placeholder="https://…"
+              disabled={!invoiceNumber.trim()}
             />
+            {!invoiceNumber.trim() && (
+              <p className="text-[var(--text-xs)] text-[var(--color-text-muted)]">
+                Enter the invoice number first.
+              </p>
+            )}
           </div>
 
-          {discrepant && (
+          <label className="flex items-center gap-[var(--space-2)] cursor-pointer select-none text-[var(--text-sm)]">
+            <input
+              type="checkbox"
+              checked={hasDiscrepancy}
+              onChange={() => setHasDiscrepancy((v) => !v)}
+              style={{ accentColor: "var(--color-brand)" }}
+            />
+            This invoice's total differs from the expected total above
+          </label>
+
+          {hasDiscrepancy && (
             <div className="flex flex-col gap-[var(--space-2)]">
               <Label htmlFor="discrepancyReason">
-                Discrepancy Reason <span className="text-[var(--status-danger-text)]">(required — invoice total does not match order total)</span>
+                Describe the discrepancy <span className="text-[var(--status-danger-text)]">(required)</span>
               </Label>
               <Textarea
                 id="discrepancyReason"
@@ -178,8 +190,8 @@ export function InvoiceVerifyModal({ open, order, onClose, onSubmit }: Props) {
                 style={{ accentColor: "var(--color-brand)" }}
               />
               <span className="text-[var(--text-sm)] font-[var(--weight-medium)]">
-                I have compared this invoice against the order lines above and confirm it is accurate
-                {discrepant ? ", with the discrepancy documented." : "."}
+                I have compared this invoice against the order lines above, and confirmed the total
+                {hasDiscrepancy ? " with the discrepancy documented." : " matches the expected amount."}
               </span>
             </label>
           </div>
@@ -194,7 +206,7 @@ export function InvoiceVerifyModal({ open, order, onClose, onSubmit }: Props) {
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={!canAttest || !attested || busy}>
-            {busy ? "Verifying…" : "Verify & Release to Pickup"}
+            {busy ? "Verifying…" : "Order Verified & Ready for Pickup"}
           </Button>
         </DialogFooter>
       </DialogContent>

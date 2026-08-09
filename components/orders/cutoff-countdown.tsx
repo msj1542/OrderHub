@@ -11,6 +11,8 @@ type Props = {
   cutoffWeekday: string;
   cutoffTime: string;
   businessTimezone: string;
+  /** Formatted date (e.g. "Friday the 13th") an order placed right now would ship by. */
+  receiveByLabel?: string;
 };
 
 function getNextCutoff(cutoffWeekday: string, cutoffTime: string, tz: string, now: Date): Date {
@@ -75,9 +77,17 @@ function formatCountdown(ms: number): string {
   return `${minutes}m`;
 }
 
-export function CutoffCountdown({ cutoffWeekday, cutoffTime, businessTimezone }: Props) {
+type Tier = "default" | "warning" | "urgent";
+
+const TIER_STYLES: Record<Tier, { bg: string; text: string; border: string }> = {
+  default: { bg: "var(--color-brand-subtle)",  text: "var(--color-brand)",         border: "var(--color-brand-border)" },
+  warning: { bg: "var(--status-warning-bg)",   text: "var(--status-warning-text)", border: "var(--status-warning-border)" },
+  urgent:  { bg: "var(--status-urgent-bg)",    text: "var(--status-urgent-text)",  border: "var(--status-urgent-border)" },
+};
+
+export function CutoffCountdown({ cutoffWeekday, cutoffTime, businessTimezone, receiveByLabel }: Props) {
   const [remaining, setRemaining] = useState<string | null>(null);
-  const [urgent, setUrgent] = useState(false);
+  const [tier, setTier] = useState<Tier>("default");
 
   useEffect(() => {
     function update() {
@@ -85,7 +95,11 @@ export function CutoffCountdown({ cutoffWeekday, cutoffTime, businessTimezone }:
       const target = getNextCutoff(cutoffWeekday, cutoffTime, businessTimezone, now);
       const diff = target.getTime() - now.getTime();
       setRemaining(formatCountdown(diff));
-      setUrgent(diff > 0 && diff < 4 * 60 * 60 * 1000);
+      setTier(
+        diff > 0 && diff < 3 * 60 * 60 * 1000  ? "urgent" :
+        diff > 0 && diff < 24 * 60 * 60 * 1000 ? "warning" :
+        "default",
+      );
     }
     update();
     const interval = setInterval(update, 60_000);
@@ -93,6 +107,7 @@ export function CutoffCountdown({ cutoffWeekday, cutoffTime, businessTimezone }:
   }, [cutoffWeekday, cutoffTime, businessTimezone]);
 
   if (!remaining) return null;
+  const style = TIER_STYLES[tier];
 
   return (
     <div
@@ -104,13 +119,16 @@ export function CutoffCountdown({ cutoffWeekday, cutoffTime, businessTimezone }:
         borderRadius: "var(--radius-md)",
         fontSize: "var(--text-sm)",
         fontWeight: "var(--weight-medium)",
-        background: urgent ? "var(--status-urgent-bg)" : "var(--color-brand-subtle)",
-        color: urgent ? "var(--status-urgent-text)" : "var(--color-brand)",
-        border: `1px solid ${urgent ? "var(--status-urgent-border)" : "var(--color-brand-border)"}`,
+        background: style.bg,
+        color: style.text,
+        border: `1px solid ${style.border}`,
       }}
     >
-      <span style={{ fontSize: "var(--text-xs)", opacity: 0.8 }}>Order deadline</span>
+      <span style={{ fontSize: "var(--text-xs)", opacity: 0.8 }}>Order cutoff in</span>
       <span style={{ fontVariantNumeric: "tabular-nums" }}>{remaining}</span>
+      {receiveByLabel && (
+        <span>to receive by <strong>{receiveByLabel}</strong></span>
+      )}
     </div>
   );
 }

@@ -20,12 +20,17 @@ export async function saveOperationsSettingsAction(
       {
         businessTimezone:    formData.get("businessTimezone") as string,
         rushFeeMode:         formData.get("rushFeeMode") as string,
-        rushFeeValue:        parseFloat(formData.get("rushFeeValue") as string),
+        rushFeeValue:        parseFloat((formData.get("rushFeeValue") as string) || "0"),
+        rushFeeTierMaxPercent: parseFloat((formData.get("rushFeeTierMaxPercent") as string) || "0"),
+        rushFeeTierMinPercent: parseFloat((formData.get("rushFeeTierMinPercent") as string) || "0"),
         cutoffWeekday:       formData.get("cutoffWeekday") as string,
         cutoffTime:          formData.get("cutoffTime") as string,
         completionWeekday:   formData.get("completionWeekday") as string,
         completionTime:      formData.get("completionTime") as string,
+        completionWeekOffset: (formData.get("completionWeekOffset") as string) || "same",
         duplicateWindowDays: parseInt(formData.get("duplicateWindowDays") as string, 10),
+        labelWidthIn:        parseFloat(formData.get("labelWidthIn") as string),
+        labelHeightIn:       parseFloat(formData.get("labelHeightIn") as string),
       },
       user.id,
     );

@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireEffectiveUser } from "@/lib/auth";
 import { listNotifications } from "@/lib/notifications/service";
 import { NotificationList } from "@/components/notifications/notification-list";
 
@@ -11,7 +11,7 @@ export default async function NotificationsPage({
 }: {
   searchParams: Promise<{ page?: string }>;
 }) {
-  const user = await requireUser();
+  const user = await requireEffectiveUser();
   const params = await searchParams;
   const page   = Math.max(1, Number(params.page) || 1);
 

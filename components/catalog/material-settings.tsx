@@ -63,6 +63,7 @@ export function MaterialSettingsPanel({ materials }: Props) {
             <button
               key={m.id}
               onClick={() => setSelectedId(m.id)}
+              className={m.id !== selectedId ? "hover:bg-[var(--color-sunken)] transition-colors" : undefined}
               style={{
                 display:     "block",
                 width:       "100%",
@@ -75,22 +76,19 @@ export function MaterialSettingsPanel({ materials }: Props) {
                 color:       selectedId === m.id ? "var(--color-brand)" : "var(--color-text-primary)",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-1)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
                 <span
                   style={{
                     display:      "inline-block",
                     width:        8,
                     height:       8,
                     borderRadius: "50%",
-                    background:   m.isActive ? "var(--color-success)" : "var(--color-text-muted)",
+                    background:   m.isActive ? "var(--status-success-text)" : "var(--color-text-muted)",
                     flexShrink:   0,
                   }}
                 />
                 <strong style={{ fontSize: "var(--text-sm)" }}>{m.name}</strong>
               </div>
-              <small style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>
-                {m.rolls.filter((r) => r.isActive).map((r) => `${r.widthIn}″`).join(" · ") || "No active rolls"}
-              </small>
             </button>
           ))}
         </div>

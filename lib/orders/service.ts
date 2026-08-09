@@ -6,7 +6,7 @@
  * All status transitions are transactional and role-gated.
  */
 
-import { and, asc, desc, eq, gte, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, ne, notInArray, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import {
@@ -39,8 +39,12 @@ function orderScopeCondition(user: AppUser) {
 
 // ── List / get ─────────────────────────────────────────────────
 
+/** Terminal statuses excluded by the "active" filter — nothing left to act on. */
+export const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["released", "invoiced", "closed", "canceled"];
+
 export type OrderFilters = {
-  status?:    OrderStatus;
+  /** A specific status, "active" (everything not yet terminal), or omitted for no filter. */
+  status?:    OrderStatus | "active";
   companyId?: string;
   search?:    string;
   /** 1-indexed page number. Omit (or pass neither page nor pageSize) to return every matching row, unpaginated. */
@@ -60,7 +64,11 @@ export async function listOrders(
   const scope = orderScopeCondition(user);
 
   const conditions = scope ? [scope] : [];
-  if (filters.status)    conditions.push(eq(orders.status, filters.status));
+  if (filters.status === "active") {
+    conditions.push(notInArray(orders.status, TERMINAL_ORDER_STATUSES));
+  } else if (filters.status) {
+    conditions.push(eq(orders.status, filters.status));
+  }
   if (filters.companyId && user.role.isInternal) conditions.push(eq(orders.companyId, filters.companyId));
   if (filters.search?.trim()) {
     const q = `%${filters.search.trim()}%`;
@@ -457,9 +465,14 @@ export async function saveOrSubmitOrder(
   const resolvedLines = await resolveLines(input.lines, user);
 
   const subtotal = resolvedLines.reduce((sum, l) => addMoney(sum, parseFloat(l.lineTotal ?? "0")), 0);
-  const rushFee  = input.isExpedited ? computeRushFee(subtotal, settings) : 0;
+  // Expedited is order-level, all-or-nothing (not per-line) — the rush fee
+  // prices the full order subtotal.
+  const now = new Date();
+  const rushFee = input.isExpedited
+    ? computeRushFee(subtotal, settings, { now, requestedDate: input.requestedDate ?? undefined })
+    : 0;
   const grandTotal = addMoney(subtotal, rushFee);
-  const expectedCompletion = computeExpectedCompletion(settings, new Date());
+  const expectedCompletion = computeExpectedCompletion(settings, now);
 
   // Duplicate PO check (only on submit, not draft)
   if (mode === "submit" && input.poNumber?.trim()) {
@@ -478,7 +491,6 @@ export async function saveOrSubmitOrder(
     }
   }
 
-  const now = new Date();
   const newStatus: OrderStatus = mode === "submit" ? "submitted" : "draft";
 
   const orderValues = {
@@ -735,6 +747,7 @@ export async function acceptOrder(
   orderId: string,
   user: AppUser,
   expectedCompletionDate?: string,
+  requestedDate?: string,
 ): Promise<Order> {
   if (!can(user, "order:accept")) throw new Error("Permission denied.");
 
@@ -745,6 +758,11 @@ export async function acceptOrder(
 
   const now = new Date();
   const completionDate = expectedCompletionDate || order.expectedCompletionDate;
+  // Only expedited orders carry a requested date; ignore any override for a
+  // non-expedited order rather than silently inventing one.
+  const finalRequestedDate = order.isExpedited
+    ? (requestedDate || order.requestedDate)
+    : order.requestedDate;
 
   return await db.transaction(async (tx) => {
     const [updated] = await tx
@@ -752,6 +770,7 @@ export async function acceptOrder(
       .set({
         status:                 rule.toStatus!,
         expectedCompletionDate: completionDate,
+        requestedDate:          finalRequestedDate,
         acceptedAt:             now,
         updatedAt:              now,
       })
@@ -885,7 +904,7 @@ export async function invoiceVerifyOrder(
     "This order is not ready for invoice verification.",
   );
 
-  const validationError = validateInvoiceVerification(input, parseFloat(order.grandTotal));
+  const validationError = validateInvoiceVerification(input);
   if (validationError) throw new Error(validationError);
 
   const now = new Date();
@@ -897,17 +916,21 @@ export async function invoiceVerifyOrder(
       .where(eq(orders.id, orderId))
       .returning();
 
-    await tx
-      .update(productionWorkOrders)
-      .set({ status: "awaiting_pickup", updatedAt: now })
-      .where(eq(productionWorkOrders.orderId, orderId));
+    // Deliberately not touching productionWorkOrders.status here: production
+    // being "completed" and the order being "ready for pickup" are separate
+    // facts. Overwriting the work order to "awaiting_pickup" used to erase
+    // the "production is done" signal the coordinator relies on — it now
+    // only advances to "released" when the order is actually released.
 
     await tx.insert(invoiceVerifications).values({
       orderId,
       userId:            user.id,
       invoiceNumber:      input.invoiceNumber.trim(),
       invoiceUrl:         input.invoiceUrl.trim() || null,
-      invoiceTotal:       input.invoiceTotal !== null ? toDecimal(input.invoiceTotal) : null,
+      // No number is ever retyped by hand — record the order's own grand
+      // total when the verifier confirmed it matched, or leave it unset
+      // when they flagged (and documented) a discrepancy instead.
+      invoiceTotal:       input.hasDiscrepancy ? null : toDecimal(parseFloat(order.grandTotal)),
       discrepancyReason:  input.discrepancyReason.trim() || null,
       attested:           true,
     });
@@ -1143,13 +1166,20 @@ export async function declineCancellation(
 // ── Dashboard counts ───────────────────────────────────────────
 
 export type DashboardCounts = {
+  // Internal-only fields (zeroed for external users)
   submittedCount:        number;
   expeditedCount:        number;
   cancellationCount:     number;
-  draftCount:            number;
   pendingWorkOrderCount: number;
   dueThisWeekCount:      number;
   overdueCount:          number;
+  // External-only fields (zeroed for internal users) — mutually exclusive
+  // lifecycle buckets, unlike the old submitted/accepted pair which double-
+  // counted the same orders.
+  draftCount:            number;
+  externalSubmittedCount: number;
+  inProductionCount:     number;
+  readyForPickupCount:   number;
 };
 
 export type DashboardAction = {
@@ -1185,35 +1215,44 @@ export async function getDashboardCounts(user: AppUser): Promise<DashboardCounts
     const [pendingWO] = await db.select({ n: sql<number>`count(*)::int` }).from(productionWorkOrders).where(eq(productionWorkOrders.status, "pending"));
 
     return {
-      submittedCount:        row.submitted,
-      expeditedCount:        row.expedited,
-      cancellationCount:     row.cancellation,
-      draftCount:            0,
-      pendingWorkOrderCount: pendingWO.n,
-      dueThisWeekCount:      row.dueThisWeek,
-      overdueCount:          row.overdue,
+      submittedCount:         row.submitted,
+      expeditedCount:         row.expedited,
+      cancellationCount:      row.cancellation,
+      pendingWorkOrderCount:  pendingWO.n,
+      dueThisWeekCount:       row.dueThisWeek,
+      overdueCount:           row.overdue,
+      draftCount:             0,
+      externalSubmittedCount: 0,
+      inProductionCount:      0,
+      readyForPickupCount:    0,
     };
   } else {
+    // Mutually exclusive lifecycle buckets — every non-draft, non-terminal
+    // order falls into exactly one of "submitted" / "in production" /
+    // "ready for pickup", so the cards never double-count the same order.
     const scope = orderScopeCondition(user);
     const conds = scope ? [scope] : [];
     const [row] = await db
       .select({
-        drafts:    sql<number>`count(*) filter (where ${orders.status} = 'draft')::int`,
-        submitted: sql<number>`count(*) filter (where ${orders.status} in ('submitted', 'accepted'))::int`,
-        accepted:  sql<number>`count(*) filter (where ${orders.status} = 'accepted')::int`,
-        ready:     sql<number>`count(*) filter (where ${orders.status} = 'ready_for_pickup')::int`,
+        drafts:       sql<number>`count(*) filter (where ${orders.status} = 'draft')::int`,
+        submitted:    sql<number>`count(*) filter (where ${orders.status} = 'submitted')::int`,
+        inProduction: sql<number>`count(*) filter (where ${orders.status} in ('accepted', 'in_fulfillment', 'fulfillment_completed'))::int`,
+        ready:        sql<number>`count(*) filter (where ${orders.status} = 'ready_for_pickup')::int`,
       })
       .from(orders)
       .where(conds.length ? and(...conds) : undefined);
 
     return {
-      submittedCount:        row.submitted,
-      expeditedCount:        row.accepted,
-      cancellationCount:     row.ready,
-      draftCount:            row.drafts,
-      pendingWorkOrderCount: 0,
-      dueThisWeekCount:      0,
-      overdueCount:          0,
+      submittedCount:         0,
+      expeditedCount:         0,
+      cancellationCount:      0,
+      pendingWorkOrderCount:  0,
+      dueThisWeekCount:       0,
+      overdueCount:           0,
+      draftCount:             row.drafts,
+      externalSubmittedCount: row.submitted,
+      inProductionCount:      row.inProduction,
+      readyForPickupCount:    row.ready,
     };
   }
 }
@@ -1233,6 +1272,7 @@ export async function getDashboardActions(user: AppUser): Promise<DashboardActio
         companyName: company.name,
         isExpedited: orders.isExpedited,
         expectedCompletionDate: orders.expectedCompletionDate,
+        requestedDate: orders.requestedDate,
         cancellationRequested: orders.cancellationRequested,
         status: orders.status,
       })
@@ -1249,12 +1289,16 @@ export async function getDashboardActions(user: AppUser): Promise<DashboardActio
       .limit(10);
 
     for (const o of submitted) {
+      // The row's "Requested"/"Due" date column must reflect the field its
+      // own label names — an expedited order shows its actual requested
+      // date, not the (possibly unset, pre-acceptance) standard due date.
+      const dueDate = o.isExpedited && o.requestedDate ? o.requestedDate : o.expectedCompletionDate;
       if (o.cancellationRequested) {
-        actions.push({ key: `cancel-${o.id}`, label: "Cancellation request needs review", detail: "Customer decision required", orderId: o.id, orderNumber: o.orderNumber, companyName: o.companyName, isExpedited: o.isExpedited, dueDate: o.expectedCompletionDate, target: "orders" });
+        actions.push({ key: `cancel-${o.id}`, label: "Cancellation request needs review", detail: "Customer decision required", orderId: o.id, orderNumber: o.orderNumber, companyName: o.companyName, isExpedited: o.isExpedited, dueDate, target: "orders" });
       } else if (o.status === "submitted") {
-        actions.push({ key: `review-${o.id}`, label: "New order needs review and acceptance", detail: "Customer order awaiting acknowledgment", orderId: o.id, orderNumber: o.orderNumber, companyName: o.companyName, isExpedited: o.isExpedited, dueDate: o.expectedCompletionDate, target: "orders" });
+        actions.push({ key: `review-${o.id}`, label: "New order needs review and acceptance", detail: "Customer order awaiting acknowledgment", orderId: o.id, orderNumber: o.orderNumber, companyName: o.companyName, isExpedited: o.isExpedited, dueDate, target: "orders" });
       } else if (o.status === "fulfillment_completed") {
-        actions.push({ key: `invoice-${o.id}`, label: "Invoice verification required", detail: "Production is complete", orderId: o.id, orderNumber: o.orderNumber, companyName: o.companyName, isExpedited: o.isExpedited, dueDate: o.expectedCompletionDate, target: "orders" });
+        actions.push({ key: `invoice-${o.id}`, label: "Invoice verification required", detail: "Production is complete", orderId: o.id, orderNumber: o.orderNumber, companyName: o.companyName, isExpedited: o.isExpedited, dueDate, target: "orders" });
       }
     }
   }
@@ -1304,10 +1348,17 @@ export async function getSidebarBadges(user: AppUser): Promise<{ orders: number;
     ]);
     return { orders: submitted.n + needsAction.n, production: pendingWO.n };
   }
-  // External users: count their own orders that are in active states
+  // External users: count active orders in scope, excluding orders this
+  // user just submitted themselves — they don't need to be notified about
+  // their own not-yet-accepted order. Once it's accepted (or further along,
+  // including becoming ready for pickup), that's someone else's action and
+  // is worth surfacing again.
   const scope = orderScopeCondition(user);
   const conditions = [
-    inArray(orders.status, ["submitted", "accepted", "in_fulfillment"]),
+    or(
+      inArray(orders.status, ["accepted", "in_fulfillment", "ready_for_pickup"]),
+      and(eq(orders.status, "submitted"), ne(orders.createdByUserId, user.id)),
+    )!,
   ];
   if (scope) conditions.push(scope);
   const [active] = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(...conditions));

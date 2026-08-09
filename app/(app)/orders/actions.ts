@@ -24,13 +24,14 @@ export async function acceptOrderAction(
   orderId: string,
   action: "accept" | "claim" | "release",
   expectedCompletionDate?: string,
+  requestedDate?: string,
 ): Promise<Result> {
   try {
     const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
     assertNotPreview(preview);
 
     if (action === "accept") {
-      await acceptOrder(orderId, user, expectedCompletionDate);
+      await acceptOrder(orderId, user, expectedCompletionDate, requestedDate);
     } else if (action === "claim") {
       await claimOrder(orderId, user);
     } else if (action === "release") {
@@ -139,7 +140,7 @@ export async function addCommentAction(_prev: unknown, formData: FormData): Prom
     assertNotPreview(preview);
     const orderId    = formData.get("orderId") as string;
     const body       = formData.get("body") as string;
-    const isInternal = formData.get("isInternal") === "true";
+    const isInternal = formData.getAll("isInternal").includes("true");
     await addComment(orderId, user, body, isInternal);
     revalidatePath("/orders");
     return {};

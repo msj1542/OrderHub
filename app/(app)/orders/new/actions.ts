@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/lib/auth";
+import { requireUser, getPreviewContext, assertNotPreview } from "@/lib/auth";
 import { saveOrSubmitOrder } from "@/lib/orders/service";
 import type { OrderLineInput } from "@/lib/orders/service";
 
@@ -16,7 +16,8 @@ async function handleOrderAction(
   mode: "draft" | "submit",
 ): Promise<ActionResult> {
   try {
-    const user = await requireUser();
+    const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
+    assertNotPreview(preview);
 
     const companyId             = formData.get("companyId") as string;
     const poNumber              = (formData.get("poNumber") as string) || "";
@@ -26,11 +27,10 @@ async function handleOrderAction(
     const linesJson             = formData.get("lines") as string;
     const lines                 = JSON.parse(linesJson) as OrderLineInput[];
 
-    const isExpedited   = lines.some((l) => l.isExpedited);
-    const requestedDate = lines.reduce((earliest: string | undefined, l) => {
-      if (!l.isExpedited || !l.requestedDate) return earliest;
-      return !earliest || l.requestedDate < earliest ? l.requestedDate : earliest;
-    }, undefined);
+    // Expedited is order-level, all-or-nothing — every line carries the
+    // same isExpedited/requestedDate values (see components/orders/new-order.tsx).
+    const isExpedited   = lines.length > 0 && lines.every((l) => l.isExpedited);
+    const requestedDate = lines.find((l) => l.isExpedited)?.requestedDate ?? undefined;
 
     const targetCompanyId = user.role.isInternal ? companyId : user.companyId!;
 

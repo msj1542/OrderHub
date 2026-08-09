@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { users, roles, companies } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import type { AppUser } from "@/lib/db/schema";
+import { can } from "@/lib/authz/policy";
 
 // ── Session helpers ───────────────────────────────────────────
 
@@ -108,5 +109,36 @@ export async function getEffectiveContext(user: AppUser): Promise<{
     viewAsCompanyId:   user.companyId,
     viewAsCompanyName: user.company?.name ?? null,
     isPreview:         false,
+  };
+}
+
+/**
+ * Like requireUser(), but when portal preview is active (and the real user
+ * has permission to preview), returns a synthetic AppUser representing the
+ * previewed company/role instead of the real internal user. Every page that
+ * renders customer-facing content (permission checks, data scoping) should
+ * call this instead of requireUser() so "Preview as this company" actually
+ * shows what that company/role sees, rather than always rendering the
+ * internal admin's full view under a preview banner.
+ *
+ * Server Actions must keep using requireUser() + assertNotPreview() — this
+ * helper is for reads only; the real user's identity is still used for any
+ * audit/ownership fields.
+ */
+export async function requireEffectiveUser(): Promise<AppUser> {
+  const user = await requireUser();
+  const preview = await getPreviewContext();
+  if (!preview || !can(user, "portal:preview")) return user;
+
+  const [company] = await db.select().from(companies).where(eq(companies.id, preview.companyId)).limit(1);
+  const [role]    = await db.select().from(roles).where(eq(roles.roleCode, preview.roleCode)).limit(1);
+  if (!company || !role) return user;
+
+  return {
+    ...user,
+    companyId: company.id,
+    company,
+    roleCode:  role.roleCode,
+    role,
   };
 }

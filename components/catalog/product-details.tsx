@@ -88,7 +88,7 @@ export function ProductDetails({ product, pricingVisible }: Props) {
       <div
         style={{
           display:             "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
           gap:                 "var(--space-3) var(--space-6)",
           alignContent:        "start",
         }}

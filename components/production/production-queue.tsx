@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ClipboardCheck } from "lucide-react";
 import { QcModal }     from "@/components/production/qc-modal";
 import { RecutModal }  from "@/components/production/recut-modal";
@@ -199,14 +200,21 @@ function WorkOrderDetail({
   canManage,
   canQC,
   onNeedData,
+  onPieceUpdate,
 }: {
   woId:      string;
   canManage: boolean;
   canQC:     boolean;
   onNeedData: (woId: string) => WorkOrderFull | null;
+  onPieceUpdate: (woId: string, lineId: string, pieces: number[]) => void;
 }) {
   const wo = onNeedData(woId);
   if (!wo) return <p className="text-[var(--text-sm)] text-[var(--color-text-muted)] p-[var(--space-4)]">Loading…</p>;
+
+  // Interactive tally boxes only make sense while a work order is actively
+  // being cut — once it's past that stage the boxes stop rendering (some
+  // lines finalized incomplete) and only the settled count is meaningful.
+  const showInteractiveTally = wo.status === "in_progress";
 
   return (
     <div className="text-[var(--text-sm)] text-[var(--color-text-primary)]">
@@ -224,14 +232,16 @@ function WorkOrderDetail({
               </span>
             </span>
           </div>
-          <PieceTally
-            lineId={line.id}
-            workOrderId={wo.id}
-            quantity={line.quantity}
-            initialDone={line.progress?.completedPieces ?? []}
-            canManage={canManage}
-            onUpdate={() => {}}
-          />
+          {showInteractiveTally ? (
+            <PieceTally
+              lineId={line.id}
+              workOrderId={wo.id}
+              quantity={line.quantity}
+              initialDone={line.progress?.completedPieces ?? []}
+              canManage={canManage}
+              onUpdate={(lineId, pieces) => onPieceUpdate(wo.id, lineId, pieces)}
+            />
+          ) : null}
           {line.recuts.length > 0 && (
             <div className="mt-[var(--space-2)]">
               <p className="text-[var(--color-text-muted)]">
@@ -284,6 +294,7 @@ export function ProductionQueue({
   const [qcModalWoId, setQcModalWoId]     = React.useState<string | null>(null);
   const [recutModalWoId, setRecutModalWoId] = React.useState<string | null>(null);
   const [labelPrintWoId, setLabelPrintWoId] = React.useState<string | null>(null);
+  const [finalizeConfirmWoId, setFinalizeConfirmWoId] = React.useState<string | null>(null);
   const [actionError, setActionError]       = React.useState<string | null>(null);
 
   function switchTab(tab: Tab) {
@@ -305,7 +316,14 @@ export function ProductionQueue({
     let debounce: ReturnType<typeof setTimeout> | null = null;
     const scheduleRefresh = () => {
       if (debounce) clearTimeout(debounce);
-      debounce = setTimeout(() => router.refresh(), 400);
+      debounce = setTimeout(() => {
+        router.refresh();
+        // The server-rendered summary (wo.doneCount, wo.totalPieces) refreshes
+        // via router.refresh(), but the client-cached per-line detail in
+        // fullData does not — drop it so any expanded panel re-fetches
+        // current data instead of showing what was true before this event.
+        setFullData(new Map());
+      }, 400);
     };
 
     const channel = supabase
@@ -320,37 +338,76 @@ export function ProductionQueue({
     };
   }, [router]);
 
-  async function handleExpand(woId: string) {
+  // Fetches (and caches) full work-order detail, without the expand/collapse
+  // side effect handleExpand carries — used by callers (Print Labels, Record
+  // Re-cut) that need the data loaded but must never toggle the panel shut.
+  const ensureFullData = React.useCallback(async (woId: string) => {
+    if (fullData.has(woId)) return;
+    const res = await fetch(`/api/production/${woId}/detail`);
+    if (res.ok) {
+      const data: WorkOrderFull = await res.json();
+      setFullData((m) => new Map(m).set(woId, data));
+    }
+  }, [fullData]);
+
+  function handleExpand(woId: string) {
     if (expandedId === woId) {
       setExpandedId(null);
       return;
     }
     setExpandedId(woId);
-    // Fetch full detail if we don't have it yet
-    if (!fullData.has(woId)) {
-      const res = await fetch(`/api/production/${woId}/detail`);
-      if (res.ok) {
-        const data: WorkOrderFull = await res.json();
-        setFullData((m) => new Map(m).set(woId, data));
-      }
-    }
+    ensureFullData(woId);
   }
+
+  // Whenever the expanded panel's cached detail is missing (first expand, or
+  // dropped by a realtime refresh/action invalidation above), re-fetch it.
+  React.useEffect(() => {
+    if (expandedId) ensureFullData(expandedId);
+  }, [expandedId, ensureFullData]);
 
   function getFullWo(woId: string): WorkOrderFull | null {
     return fullData.get(woId) ?? null;
+  }
+
+  function invalidateFullData(woId: string) {
+    setFullData((m) => {
+      if (!m.has(woId)) return m;
+      const next = new Map(m);
+      next.delete(woId);
+      return next;
+    });
+  }
+
+  function handlePieceUpdate(woId: string, lineId: string, pieces: number[]) {
+    setFullData((m) => {
+      const wo = m.get(woId);
+      if (!wo) return m;
+      const next = new Map(m);
+      next.set(woId, {
+        ...wo,
+        lines: wo.lines.map((l) =>
+          l.id === lineId ? { ...l, progress: { id: l.progress?.id ?? "", completedPieces: pieces } } : l,
+        ),
+      });
+      return next;
+    });
   }
 
   async function handleClaim(woId: string) {
     setActionError(null);
     const res = await claimWorkOrderAction(woId);
     if (res.error) setActionError(res.error);
-    else router.refresh();
+    else {
+      invalidateFullData(woId);
+      router.refresh();
+    }
   }
 
   async function handleQCSubmit(answers: Record<string, boolean>, notes: string | null) {
     if (!qcModalWoId) return;
     const res = await submitQCAction(qcModalWoId, answers, notes);
     if (res.error) throw new Error(res.error);
+    invalidateFullData(qcModalWoId);
     setQcModalWoId(null);
     router.refresh();
   }
@@ -359,6 +416,7 @@ export function ProductionQueue({
     if (!recutModalWoId) return;
     const res = await recordRecutAction(recutModalWoId, orderLineId, quantity, reason);
     if (res.error) throw new Error(res.error);
+    invalidateFullData(recutModalWoId);
     setRecutModalWoId(null);
     router.refresh();
   }
@@ -367,6 +425,7 @@ export function ProductionQueue({
   const recutWo  = recutModalWoId ? workOrders.find((w) => w.id === recutModalWoId) : null;
   const recutFull = recutModalWoId ? getFullWo(recutModalWoId) : null;
   const labelPrintFull = labelPrintWoId ? getFullWo(labelPrintWoId) : null;
+  const finalizeConfirmWo = finalizeConfirmWoId ? workOrders.find((w) => w.id === finalizeConfirmWoId) : null;
 
   return (
     <div className="flex flex-col h-full">
@@ -448,12 +507,8 @@ export function ProductionQueue({
                       <span className="text-[var(--text-sm)] text-[var(--color-text-muted)]">{wo.companyName}</span>
                       {wo.isExpedited && (
                         <span
-                          className="px-[var(--space-2)] py-[1px] rounded-full text-[var(--text-xs)] font-[var(--weight-medium)]"
-                          style={{
-                            background: "var(--status-warning-bg)",
-                            color:      "var(--status-warning-text)",
-                            border:     "1px solid var(--status-warning-border)",
-                          }}
+                          className="text-[var(--text-xs)] font-[var(--weight-bold)] uppercase tracking-wide"
+                          style={{ color: "var(--status-urgent-text)" }}
                         >
                           Expedited
                         </span>
@@ -478,19 +533,19 @@ export function ProductionQueue({
                       {status}
                     </span>
 
-                    <span className="shrink-0 text-[var(--text-xs)] text-[var(--color-text-muted)]">
+                    <span className="shrink-0 text-[var(--text-sm)] font-[var(--weight-medium)]" style={{ color: "var(--color-text-primary)" }}>
                       {wo.doneCount}/{wo.totalPieces} pieces
                     </span>
+
+                    {wo.dueDate && (
+                      <span className="shrink-0 text-[var(--text-sm)] font-[var(--weight-medium)]" style={{ color: "var(--color-text-primary)" }}>
+                        Due {wo.dueDate}
+                      </span>
+                    )}
 
                     {wo.claimedByName && (
                       <span className="shrink-0 text-[var(--text-xs)] text-[var(--color-text-muted)]">
                         {wo.claimedByName}
-                      </span>
-                    )}
-
-                    {wo.dueDate && (
-                      <span className="shrink-0 text-[var(--text-xs)] text-[var(--color-text-muted)]">
-                        Due {wo.dueDate}
                       </span>
                     )}
 
@@ -518,24 +573,24 @@ export function ProductionQueue({
                         {canManage && wo.status === "in_progress" && (
                           <Button size="sm" variant="secondary" onClick={() => {
                             setRecutModalWoId(wo.id);
-                            // Ensure full data is loaded
-                            if (!fullData.has(wo.id)) handleExpand(wo.id);
+                            ensureFullData(wo.id);
                           }}>
-                            Record Non-Billable Re-cut
+                            Record re-cut
                           </Button>
                         )}
-                        {canQC && wo.status === "in_progress" && (
+                        {canQC && wo.status === "in_progress" && wo.doneCount > 0 && (
                           <Button
                             size="sm"
                             variant={wo.doneCount < wo.totalPieces ? "secondary" : undefined}
                             onClick={() => {
                               if (wo.doneCount < wo.totalPieces) {
-                                if (!confirm(`${wo.totalPieces - wo.doneCount} of ${wo.totalPieces} pieces are incomplete. Finalize anyway? The final price may be recalculated.`)) return;
+                                setFinalizeConfirmWoId(wo.id);
+                                return;
                               }
                               setQcModalWoId(wo.id);
                             }}
                           >
-                            {wo.doneCount < wo.totalPieces ? "Finalize Incomplete Order" : "Finalize Production"}
+                            {wo.doneCount < wo.totalPieces ? "Finalize Incomplete Order" : "Mark Completed"}
                           </Button>
                         )}
                         {canPrint && (wo.status === "pending" || wo.status === "in_progress" || wo.status === "completed" || wo.status === "awaiting_pickup" || wo.status === "released") && (
@@ -551,7 +606,7 @@ export function ProductionQueue({
                               size="sm"
                               variant="secondary"
                               onClick={() => {
-                                if (!fullData.has(wo.id)) handleExpand(wo.id);
+                                ensureFullData(wo.id);
                                 setLabelPrintWoId(wo.id);
                               }}
                             >
@@ -568,6 +623,7 @@ export function ProductionQueue({
                           canManage={canManage && wo.status === "in_progress"}
                           canQC={canQC}
                           onNeedData={getFullWo}
+                          onPieceUpdate={handlePieceUpdate}
                         />
                       ) : (
                         <p className="text-[var(--text-sm)] text-[var(--color-text-muted)]">Loading details…</p>
@@ -606,6 +662,25 @@ export function ProductionQueue({
         onClose={() => setLabelPrintWoId(null)}
         workOrderId={labelPrintWoId ?? ""}
         lines={labelPrintFull?.lines ?? []}
+      />
+
+      {/* Finalize Incomplete Order confirmation */}
+      <ConfirmDialog
+        open={finalizeConfirmWoId !== null}
+        onOpenChange={(open) => { if (!open) setFinalizeConfirmWoId(null); }}
+        title="Finalize Incomplete Order"
+        description={
+          finalizeConfirmWo
+            ? `${finalizeConfirmWo.totalPieces - finalizeConfirmWo.doneCount} of ${finalizeConfirmWo.totalPieces} pieces are incomplete. Finalizing now will recalculate the final price based on completed items only.`
+            : undefined
+        }
+        confirmLabel="Finalize Anyway"
+        variant="danger"
+        onConfirm={() => {
+          const id = finalizeConfirmWoId;
+          setFinalizeConfirmWoId(null);
+          if (id) setQcModalWoId(id);
+        }}
       />
     </div>
   );

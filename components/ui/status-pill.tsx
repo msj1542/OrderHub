@@ -26,6 +26,23 @@ export const ORDER_STATUS_FAMILY: Record<string, StatusFamily> = {
   canceled: "danger",
 };
 
+/**
+ * `ready_for_pickup` reads differently depending on audience: internal staff
+ * care that the customer hasn't collected it yet (reuse the work order's
+ * "Awaiting Pickup" amber styling), while customers want the affirmative
+ * green "Ready for Pickup" cue. Same underlying order status either way.
+ */
+export function orderStatusDisplay(
+  status: string,
+  defaultLabel: string,
+  isInternal: boolean,
+): { label: string; family: StatusFamily } {
+  if (isInternal && status === "ready_for_pickup") {
+    return { label: "Awaiting Pickup", family: "warning" };
+  }
+  return { label: defaultLabel, family: ORDER_STATUS_FAMILY[status] ?? "neutral" };
+}
+
 export function StatusPill({
   label,
   family,

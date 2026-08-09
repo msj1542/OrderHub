@@ -157,7 +157,7 @@ function ReportView({ report }: { report: Record<string, unknown> }) {
               <strong>{key}:</strong>{" "}
               {value.length === 0
                 ? <span style={{ color: "var(--color-text-muted)" }}>none</span>
-                : <span style={{ color: value.length > 0 && key.includes("invalid") || key.includes("unmatched") || key.includes("duplicate") ? "var(--color-danger)" : "var(--color-success)" }}>
+                : <span style={{ color: value.length > 0 && key.includes("invalid") || key.includes("unmatched") || key.includes("duplicate") ? "var(--status-danger-text)" : "var(--status-success-text)" }}>
                     {value.length} — {value.join(", ")}
                   </span>
               }

@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireEffectiveUser } from "@/lib/auth";
 import { can } from "@/lib/authz/policy";
 import { redirect } from "next/navigation";
 import { listMaterials, listProducts } from "@/lib/catalog/service";
@@ -59,7 +59,7 @@ export default async function NewOrderPage({
 }: {
   searchParams: Promise<{ supplemental_to?: string; reorder_from?: string }>;
 }) {
-  const user = await requireUser();
+  const user = await requireEffectiveUser();
   if (!can(user, "order:create")) redirect("/orders");
 
   const params = await searchParams;
@@ -96,7 +96,7 @@ export default async function NewOrderPage({
       supplementalToOrderId={supplementalToOrderId}
       prefillLines={reorderFromOrderId ? prefillLines : undefined}
       defaultCompanyId={prefillCompanyId ?? user.companyId ?? undefined}
-      rushFeeConfig={{ mode: settings.rushFeeMode, value: settings.rushFeeValue }}
+      settings={settings}
     />
   );
 }

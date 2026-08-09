@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
 import { formatMoney } from "@/lib/pricing/money";
 import { saveOrderAction, submitOrderAction } from "@/app/(app)/orders/new/actions";
+import { computeRushFee, getExpeditedDateWindow, isWeekendDateString, type AppSettings } from "@/lib/settings/scheduleCalc";
 import type { ProductWithMaterials, MaterialWithRolls, Company } from "@/lib/db/schema";
 import { Plus, Trash2, Search } from "lucide-react";
 
@@ -54,7 +55,7 @@ type Props = {
   prefillCompanyId?: string;
   supplementalToOrderId?: string;
   defaultCompanyId?: string;  // for external users
-  rushFeeConfig?: { mode: string; value: number };
+  settings: AppSettings;
 };
 
 // ── Line subtotal ──────────────────────────────────────────────
@@ -78,7 +79,7 @@ export function NewOrder({
   prefillLines,
   supplementalToOrderId,
   defaultCompanyId,
-  rushFeeConfig,
+  settings,
 }: Props) {
   const router = useRouter();
 
@@ -92,6 +93,42 @@ export function NewOrder({
   const [dupWarning, setDupWarning]     = React.useState<{ orderId: string; orderNumber: string | null } | null>(null);
   const [pending, setPending]           = React.useState<"draft" | "submit" | null>(null);
   const [rushFeeConfirm, setRushFeeConfirm] = React.useState(false);
+
+  // Expedited order state — one order-level toggle + date; per-line toggles
+  // only appear once this is on, and default to on for every line.
+  const [orderExpedited, setOrderExpedited] = React.useState(
+    () => prefillLines?.some((l) => l.isExpedited) ?? false,
+  );
+  const [orderRequestedDate, setOrderRequestedDate] = React.useState(
+    () => prefillLines?.find((l) => l.isExpedited)?.requestedDate ?? "",
+  );
+  const [dateError, setDateError] = React.useState<string | null>(null);
+
+  const expeditedWindow = React.useMemo(() => getExpeditedDateWindow(settings, new Date()), [settings]);
+
+  function toggleOrderExpedited(next: boolean) {
+    setOrderExpedited(next);
+    setDateError(null);
+    if (!next) {
+      setOrderRequestedDate("");
+      setLines((prev) => prev.map((l) => ({ ...l, isExpedited: false, requestedDate: "" })));
+    } else {
+      setLines((prev) => prev.map((l) => ({ ...l, isExpedited: true, requestedDate: orderRequestedDate })));
+    }
+  }
+
+  function handleRequestedDateChange(value: string) {
+    setOrderRequestedDate(value);
+    setLines((prev) => prev.map((l) => (l.isExpedited ? { ...l, requestedDate: value } : l)));
+    if (!value) { setDateError(null); return; }
+    if (isWeekendDateString(value)) {
+      setDateError("Weekends aren't available — pick a weekday.");
+    } else if (value < expeditedWindow.min || value > expeditedWindow.max) {
+      setDateError(`Pick a date between ${expeditedWindow.min} and ${expeditedWindow.max}.`);
+    } else {
+      setDateError(null);
+    }
+  }
 
   // Catalog search state
   const [catalogSearch, setCatalogSearch] = React.useState("");
@@ -129,8 +166,8 @@ export function NewOrder({
         product,
         materialId:    defaultMat.id,
         quantity:      1,
-        isExpedited:   false,
-        requestedDate: "",
+        isExpedited:   orderExpedited,
+        requestedDate: orderExpedited ? orderRequestedDate : "",
       },
     ]);
     setShowSearch(false);
@@ -143,7 +180,7 @@ export function NewOrder({
     }
     setLines((prev) => [
       ...prev,
-      { ...customForm, id: nextId(), type: "custom", isExpedited: false, requestedDate: "" },
+      { ...customForm, id: nextId(), type: "custom", isExpedited: orderExpedited, requestedDate: orderExpedited ? orderRequestedDate : "" },
     ]);
     setCustomForm({ description: "", brand: "", model: "", modelYear: "", coverageArea: "", materialId: "", quantity: 1, notes: "" });
     setShowCustomForm(false);
@@ -159,23 +196,19 @@ export function NewOrder({
 
   // ── Totals ───────────────────────────────────────────────────
 
-  const subtotal = lines.reduce((sum, line) => {
+  const linePrice = (line: Line) => {
     const price = getLinePrice(line, products);
-    if (price == null) return sum;
-    return sum + price * line.quantity;
-  }, 0);
+    return price == null ? 0 : price * line.quantity;
+  };
 
-  const isExpedited = lines.some((l) => l.isExpedited);
-  const requestedDate = lines.reduce((earliest, l) => {
-    if (!l.isExpedited || !l.requestedDate) return earliest;
-    return !earliest || l.requestedDate < earliest ? l.requestedDate : earliest;
-  }, "" as string);
+  const subtotal = lines.reduce((sum, line) => sum + linePrice(line), 0);
 
+  // Expedited is order-level, all-or-nothing — the rush fee prices the
+  // full order subtotal.
   const rushFee = React.useMemo(() => {
-    if (!isExpedited || !rushFeeConfig || rushFeeConfig.mode === "disabled") return 0;
-    if (rushFeeConfig.mode === "flat") return rushFeeConfig.value;
-    return Math.round(subtotal * (rushFeeConfig.value / 100) * 100) / 100;
-  }, [isExpedited, rushFeeConfig, subtotal]);
+    if (!orderExpedited) return 0;
+    return computeRushFee(subtotal, settings, { requestedDate: orderRequestedDate || undefined });
+  }, [orderExpedited, subtotal, settings, orderRequestedDate]);
 
   // ── Submit helpers ───────────────────────────────────────────
 
@@ -187,11 +220,12 @@ export function NewOrder({
     if (isInternal) fd.set("internalNotes", internalNotes);
     if (supplementalToOrderId) fd.set("supplementalToOrderId", supplementalToOrderId);
     if (confirmDuplicate) fd.set("confirmDuplicate", "true");
+    const requestedDate = orderExpedited ? orderRequestedDate || null : null;
     fd.set("lines", JSON.stringify(
       lines.map((l) =>
         l.type === "catalog"
-          ? { isCustom: false, productId: l.product.id, materialId: l.materialId, quantity: l.quantity, isExpedited: l.isExpedited, requestedDate: l.requestedDate || null }
-          : { isCustom: true, description: l.description, brand: l.brand, model: l.model, modelYear: l.modelYear, coverageArea: l.coverageArea, materialId: l.materialId, quantity: l.quantity, notes: l.notes, isExpedited: l.isExpedited, requestedDate: l.requestedDate || null },
+          ? { isCustom: false, productId: l.product.id, materialId: l.materialId, quantity: l.quantity, isExpedited: orderExpedited, requestedDate }
+          : { isCustom: true, description: l.description, brand: l.brand, model: l.model, modelYear: l.modelYear, coverageArea: l.coverageArea, materialId: l.materialId, quantity: l.quantity, notes: l.notes, isExpedited: orderExpedited, requestedDate },
       ),
     ));
     return fd;
@@ -200,10 +234,10 @@ export function NewOrder({
   async function handleSubmit(mode: "draft" | "submit", confirmDuplicate = false, bypassRushFee = false) {
     if (!companyId) { setError("Select a company."); return; }
     if (lines.length === 0) { setError("Add at least one item."); return; }
-    const missingDate = lines.some((l) => l.isExpedited && !l.requestedDate);
-    if (missingDate) { setError("Each expedited item must have a requested date."); return; }
+    if (orderExpedited && !orderRequestedDate) { setError("Select a requested date for the expedited items."); return; }
+    if (orderExpedited && dateError) { setError(dateError); return; }
 
-    if (mode === "submit" && isExpedited && rushFee > 0 && !bypassRushFee) {
+    if (mode === "submit" && orderExpedited && rushFee > 0 && !bypassRushFee) {
       setRushFeeConfirm(true);
       return;
     }
@@ -302,9 +336,38 @@ export function NewOrder({
       )}
 
       {/* Order details */}
-      <div className="flex flex-col gap-[var(--space-2)]" style={{ maxWidth: "280px" }}>
-        <Label htmlFor="poNumber">PO Number</Label>
-        <Input id="poNumber" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} placeholder="Optional" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-6)]">
+        <div className="flex flex-col gap-[var(--space-2)]">
+          <Label htmlFor="poNumber">PO Number</Label>
+          <Input id="poNumber" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} placeholder="Optional" />
+        </div>
+        <div className="flex flex-col gap-[var(--space-2)]">
+          <div className="flex items-center gap-[var(--space-2)]">
+            <Checkbox
+              id="orderExpedited"
+              checked={orderExpedited}
+              onCheckedChange={(v) => toggleOrderExpedited(!!v)}
+            />
+            <Label htmlFor="orderExpedited" className="cursor-pointer">Expedited Order</Label>
+          </div>
+          {orderExpedited && (
+            <div className="flex flex-col gap-[var(--space-1)]">
+              <Label htmlFor="orderRequestedDate" className="text-[var(--text-xs)]">Requested Date*</Label>
+              <Input
+                id="orderRequestedDate"
+                type="date"
+                min={expeditedWindow.min}
+                max={expeditedWindow.max}
+                value={orderRequestedDate}
+                onChange={(e) => handleRequestedDateChange(e.target.value)}
+                style={{ maxWidth: 200 }}
+              />
+              {dateError && (
+                <p className="text-[var(--text-xs)] text-[var(--status-danger-text)]">{dateError}</p>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Line items */}
@@ -378,30 +441,6 @@ export function NewOrder({
                     ) : null;
                   })()}
                 </div>
-                <div className="flex flex-wrap items-center gap-[var(--space-3)]">
-                  <div className="flex items-center gap-[var(--space-2)]">
-                    <Checkbox
-                      id={`exp-${line.id}`}
-                      checked={line.isExpedited}
-                      onCheckedChange={(v) => updateLine(line.id, { isExpedited: !!v, requestedDate: v ? line.requestedDate : "" })}
-                    />
-                    <Label htmlFor={`exp-${line.id}`} className="cursor-pointer text-[var(--text-xs)]">Expedited</Label>
-                  </div>
-                  {line.isExpedited && (
-                    <div className="flex flex-col gap-[var(--space-1)]">
-                      <Label className="text-[var(--text-xs)]">Requested Date</Label>
-                      <Input
-                        type="date"
-                        className="h-8 text-[var(--text-sm)] w-40"
-                        value={line.requestedDate}
-                        onChange={(e) => updateLine(line.id, { requestedDate: e.target.value })}
-                      />
-                      <p className="text-[var(--text-xs)] text-[var(--color-text-muted)]">
-                        This is a requested date, not a guarantee. Confirmation will be provided upon acceptance.
-                      </p>
-                    </div>
-                  )}
-                </div>
               </>
             ) : (
               <>
@@ -431,30 +470,6 @@ export function NewOrder({
                     <Label className="text-[var(--text-xs)]">Qty</Label>
                     <Input type="number" min={1} className="h-8 text-[var(--text-sm)]" value={line.quantity} onChange={(e) => updateLine(line.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })} />
                   </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-[var(--space-3)]">
-                  <div className="flex items-center gap-[var(--space-2)]">
-                    <Checkbox
-                      id={`exp-${line.id}`}
-                      checked={line.isExpedited}
-                      onCheckedChange={(v) => updateLine(line.id, { isExpedited: !!v, requestedDate: v ? line.requestedDate : "" })}
-                    />
-                    <Label htmlFor={`exp-${line.id}`} className="cursor-pointer text-[var(--text-xs)]">Expedited</Label>
-                  </div>
-                  {line.isExpedited && (
-                    <div className="flex flex-col gap-[var(--space-1)]">
-                      <Label className="text-[var(--text-xs)]">Requested Date</Label>
-                      <Input
-                        type="date"
-                        className="h-8 text-[var(--text-sm)] w-40"
-                        value={line.requestedDate}
-                        onChange={(e) => updateLine(line.id, { requestedDate: e.target.value })}
-                      />
-                      <p className="text-[var(--text-xs)] text-[var(--color-text-muted)]">
-                        This is a requested date, not a guarantee. Confirmation will be provided upon acceptance.
-                      </p>
-                    </div>
-                  )}
                 </div>
               </>
             )}
@@ -569,13 +584,13 @@ export function NewOrder({
               <span className="text-[var(--color-text-muted)]">Subtotal</span>
               <span>{formatMoney(subtotal)}</span>
             </div>
-            {isExpedited && rushFee > 0 && (
+            {orderExpedited && rushFee > 0 && (
               <div className="flex justify-between gap-[var(--space-10)]">
                 <span className="text-[var(--color-text-muted)]">Rush Fee</span>
                 <span className="text-[var(--status-urgent-text)]">{formatMoney(rushFee)}</span>
               </div>
             )}
-            {isExpedited && rushFee > 0 && (
+            {orderExpedited && rushFee > 0 && (
               <div className="flex justify-between gap-[var(--space-10)] border-t border-[var(--color-border-default)] pt-[var(--space-2)] font-[var(--weight-semibold)]">
                 <span>Grand Total</span>
                 <span>{formatMoney(subtotal + rushFee)}</span>
@@ -620,6 +635,12 @@ export function NewOrder({
           </Button>
         </div>
       </div>
+
+      {orderExpedited && (
+        <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] italic">
+          *This is a requested date, not a guarantee. Confirmation will be provided upon acceptance.
+        </p>
+      )}
     </div>
   );
 }

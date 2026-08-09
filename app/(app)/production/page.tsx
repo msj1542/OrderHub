@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireEffectiveUser } from "@/lib/auth";
 import { can }         from "@/lib/authz/policy";
 import { redirect }    from "next/navigation";
 import { listWorkOrders, type WorkOrderTab } from "@/lib/production/service";
@@ -13,7 +13,7 @@ export default async function ProductionPage({
 }: {
   searchParams: Promise<{ tab?: string; page?: string }>;
 }) {
-  const [user, params] = await Promise.all([requireUser(), searchParams]);
+  const [user, params] = await Promise.all([requireEffectiveUser(), searchParams]);
   if (!can(user, "production:view")) redirect("/dashboard");
 
   const tab  = (params.tab ?? "current") as WorkOrderTab;

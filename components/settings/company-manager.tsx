@@ -10,9 +10,10 @@ import { Alert }     from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ROLE_DISPLAY } from "@/lib/authz/roles";
 import type { Company } from "@/lib/db/schema";
-import { saveCompanyAction } from "@/app/(app)/settings/companies/actions";
+import { saveCompanyAction, inviteExternalAdminAction } from "@/app/(app)/settings/companies/actions";
 
 const PREVIEW_ROLES = ["external_admin", "external_ordering", "external_reference"] as const;
+const INVITABLE_ROLES = ["external_admin", "external_ordering", "external_reference"] as const;
 
 interface Props {
   companies: Company[];
@@ -46,6 +47,7 @@ export function CompanyManager({ companies, canPreview, enterPreviewAction }: Pr
             <button
               key={c.id}
               onClick={() => setSelectedId(c.id)}
+              className={c.id !== selectedId ? "hover:bg-[var(--color-sunken)] transition-colors" : undefined}
               style={{
                 display: "block", width: "100%", textAlign: "left",
                 padding: "var(--space-3) var(--space-4)",
@@ -56,10 +58,14 @@ export function CompanyManager({ companies, canPreview, enterPreviewAction }: Pr
               }}
             >
               <strong style={{ display: "block", fontSize: "var(--text-sm)" }}>{c.name}</strong>
-              <span style={{ display: "block", fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>
+              <span style={{ display: "block", fontSize: "var(--text-xs)", color: "var(--color-text-muted)", marginTop: "var(--space-1)" }}>
+                {c.primaryContactName || c.contactEmail || "No contact on file"}
+              </span>
+              <small style={{ display: "block", fontSize: "var(--text-xs)", color: "var(--color-text-muted)", marginTop: "var(--space-1)" }}>
                 {c.orderScope === "own" ? "Own-order scope" : "Company-wide scope"}
                 {!c.pricingVisible ? " · Pricing hidden" : ""}
-              </span>
+                {!c.isActive ? " · Inactive" : ""}
+              </small>
             </button>
           ))}
         </div>
@@ -88,6 +94,12 @@ function CompanyEditor({ company, canPreview, enterPreviewAction }: {
   }, [state.success]);
   const [previewRole, setPreviewRole] = useState<string>(PREVIEW_ROLES[0]);
   const [previewPending, setPreviewPending] = useState(false);
+
+  const [inviteState, inviteAction, invitePending] = useActionState(inviteExternalAdminAction, {});
+  const [inviteFormKey, setInviteFormKey] = useState(0);
+  useEffect(() => {
+    if (inviteState.success) setInviteFormKey((k) => k + 1);
+  }, [inviteState.success]);
 
   return (
     <section style={{ background: "var(--color-panel)", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-lg)", overflow: "hidden" }}>
@@ -169,6 +181,43 @@ function CompanyEditor({ company, canPreview, enterPreviewAction }: {
             </Button>
           </div>
         </form>
+
+        {company && (
+          <div style={{ marginTop: "var(--space-8)", paddingTop: "var(--space-6)", borderTop: "1px solid var(--color-border-subtle)" }}>
+            <h3 style={{ fontSize: "var(--text-base)", fontWeight: "var(--weight-semibold)", margin: "0 0 var(--space-2)" }}>
+              Invite a user
+            </h3>
+            <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)", margin: "0 0 var(--space-3)" }}>
+              Creates the first account for this company (e.g. their company admin) so they can sign in and invite the rest of their team themselves.
+            </p>
+            {(inviteState.error || inviteState.success) && (
+              <Alert variant={inviteState.error ? "danger" : "success"} className="mb-3">{inviteState.error ?? inviteState.success}</Alert>
+            )}
+            <form key={inviteFormKey} action={inviteAction} style={{ display: "flex", gap: "var(--space-3)", alignItems: "end", flexWrap: "wrap" }}>
+              <input type="hidden" name="companyId" value={company.id} />
+              <div>
+                <Label htmlFor="invite-name" style={{ fontSize: "var(--text-xs)" }}>Name</Label>
+                <Input id="invite-name" name="name" required style={{ width: 180 }} />
+              </div>
+              <div>
+                <Label htmlFor="invite-email" style={{ fontSize: "var(--text-xs)" }}>Email</Label>
+                <Input id="invite-email" name="email" type="email" required style={{ width: 220 }} />
+              </div>
+              <div>
+                <Label htmlFor="invite-role" style={{ fontSize: "var(--text-xs)" }}>Role</Label>
+                <Select name="roleCode" defaultValue={INVITABLE_ROLES[0]}>
+                  <SelectTrigger id="invite-role" style={{ width: 200 }}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {INVITABLE_ROLES.map((r) => <SelectItem key={r} value={r}>{ROLE_DISPLAY[r]}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="submit" size="sm" disabled={invitePending}>
+                {invitePending ? "Sending…" : "Send Invite"}
+              </Button>
+            </form>
+          </div>
+        )}
 
         {company && canPreview && (
           <div style={{ marginTop: "var(--space-8)", paddingTop: "var(--space-6)", borderTop: "1px solid var(--color-border-subtle)" }}>

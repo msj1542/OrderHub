@@ -1,7 +1,7 @@
 import { can } from "@/lib/authz/policy";
 import { formatMoney } from "@/lib/pricing/money";
 import { ORDER_STATUS_LABELS, type AppUser, type OrderFull } from "@/lib/db/schema";
-import { ORDER_STATUS_FAMILY, StatusPill } from "@/components/ui/status-pill";
+import { orderStatusDisplay, StatusPill } from "@/components/ui/status-pill";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
 import { CommentComposer } from "@/components/orders/comment-composer";
@@ -15,12 +15,30 @@ function formatDate(ts: string | Date | null | undefined) {
 
 export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }) {
   const statusKey = order.status as keyof typeof ORDER_STATUS_LABELS;
-  const family    = ORDER_STATUS_FAMILY[order.status] ?? "neutral";
   const canSeePrice = can(user, "pricing:view");
   const isInternal  = user.role.isInternal;
+  const status = orderStatusDisplay(order.status, ORDER_STATUS_LABELS[statusKey] ?? order.status, isInternal);
+  const isPreAcceptance = order.status === "draft" || order.status === "submitted";
 
   return (
     <div className="flex flex-col gap-[var(--space-6)] p-[var(--space-6)]">
+      {/* Actions — the primary next step belongs above the order's identity,
+          not competing for attention below it. */}
+      <OrderActions
+        order={order}
+        canAccept={can(user, "order:accept")}
+        canCancel={can(user, "order:cancel")}
+        canDeclineCancel={can(user, "order:decline_cancel")}
+        canRequestCancel={can(user, "order:request_cancel")}
+        canDeleteDraft={can(user, "order:delete_draft")}
+        canSubmit={can(user, "order:submit")}
+        canRelease={can(user, "order:release")}
+        canQC={can(user, "order:qc")}
+        canInvoice={can(user, "order:invoice_verify")}
+        canCreate={can(user, "order:create")}
+        isInternal={isInternal}
+      />
+
       {/* Header */}
       <div className="flex items-start justify-between gap-[var(--space-4)]">
         <div>
@@ -31,10 +49,7 @@ export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }
             {order.companyName} · {order.createdByName}
           </p>
         </div>
-        <div className="flex items-center gap-[var(--space-2)]">
-          {order.isExpedited && <StatusPill label="Expedited" family="urgent" />}
-          <StatusPill label={ORDER_STATUS_LABELS[statusKey] ?? order.status} family={family} />
-        </div>
+        <StatusPill label={status.label} family={status.family} />
       </div>
 
       {/* Cancellation request banner */}
@@ -47,78 +62,52 @@ export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }
         </Alert>
       )}
 
-      {/* Ready for pickup banner (customer-facing) */}
-      {!isInternal && order.status === "ready_for_pickup" && (
-        <Alert variant="success">
-          <strong>Your order is complete and ready for pickup.</strong>
-          {" "}Contact us to arrange collection.
-          {order.invoiceNumber && (
-            <span className="block mt-[var(--space-1)] text-[var(--text-sm)]">
-              Invoice: {order.invoiceUrl
-                ? <a href={order.invoiceUrl} target="_blank" rel="noopener noreferrer" className="underline">{order.invoiceNumber}</a>
-                : order.invoiceNumber}
-            </span>
+      {/* Expedited callout — the most important date on the sheet gets a
+          highlighted box instead of a corner badge (which stays a compact
+          badge in table rows for quick scanning). */}
+      {order.isExpedited && (
+        <div className="rounded-[var(--radius-md)] bg-[var(--status-urgent-bg)] border border-[var(--status-urgent-border)] px-[var(--space-4)] py-[var(--space-3)]">
+          <p className="text-[var(--text-xs)] font-[var(--weight-semibold)] text-[var(--status-urgent-text)] uppercase tracking-wide">
+            Expedited{isPreAcceptance ? " · Requested" : ""}
+          </p>
+          <p className="text-[var(--text-lg)] font-[var(--weight-bold)] text-[var(--status-urgent-text)] mt-[var(--space-1)]">
+            {formatDate(order.requestedDate)}
+          </p>
+          {isPreAcceptance && (
+            <p className="text-[var(--text-xs)] text-[var(--status-urgent-text)] mt-[var(--space-1)]">
+              Not guaranteed until accepted
+            </p>
           )}
-        </Alert>
+        </div>
       )}
-
-      {/* Actions */}
-      <OrderActions
-        order={order}
-        canAccept={can(user, "order:accept")}
-        canCancel={can(user, "order:cancel")}
-        canDeclineCancel={can(user, "order:decline_cancel")}
-        canRequestCancel={can(user, "order:request_cancel")}
-        canDeleteDraft={can(user, "order:delete_draft")}
-        canSubmit={can(user, "order:submit")}
-        canRelease={can(user, "order:release")}
-        canQC={can(user, "order:qc")}
-        canClaim={can(user, "order:claim")}
-        canInvoice={can(user, "order:invoice_verify")}
-        canCreate={can(user, "order:create")}
-        isInternal={isInternal}
-      />
 
       {/* Order info grid */}
       <div
         className="grid gap-x-[var(--space-6)] gap-y-[var(--space-4)] text-[var(--text-sm)]"
-        style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}
       >
         <div>
           <p className="text-[var(--color-text-muted)] mb-[var(--space-1)]">PO Number</p>
           <p>{order.poNumber || "—"}</p>
         </div>
-        <div>
-          <p className="text-[var(--color-text-muted)] mb-[var(--space-1)]">Ordered</p>
-          <p>{formatDate(order.submittedAt ?? order.createdAt)}</p>
-        </div>
-        {order.isExpedited && (
+        {order.invoiceNumber && (
           <div>
-            <p className="text-[var(--color-text-muted)] mb-[var(--space-1)]">Requested Expedited Date</p>
-            <p>{formatDate(order.requestedDate)}</p>
-            <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] mt-[var(--space-1)]">
-              Not guaranteed until accepted
+            <p className="text-[var(--color-text-muted)] mb-[var(--space-1)]">Invoice</p>
+            <p className={isInternal ? undefined : "text-[var(--text-base)] font-[var(--weight-semibold)]"}>
+              {order.invoiceUrl
+                ? <a href={order.invoiceUrl} target="_blank" rel="noopener noreferrer" className="text-[var(--color-brand)] underline">{order.invoiceNumber}</a>
+                : order.invoiceNumber}
             </p>
           </div>
         )}
         <div>
-          <p className="text-[var(--color-text-muted)] mb-[var(--space-1)]">{isInternal ? "Due Date" : "Expected Completion"}</p>
+          <p className="text-[var(--color-text-muted)] mb-[var(--space-1)]">Default Due Date</p>
           <p>{formatDate(order.expectedCompletionDate)}</p>
         </div>
-        {isInternal && (
-          <div>
-            <p className="text-[var(--color-text-muted)] mb-[var(--space-1)]">Company</p>
-            <p>{order.companyName}</p>
-          </div>
-        )}
-        {order.invoiceNumber && (
-          <div>
-            <p className="text-[var(--color-text-muted)] mb-[var(--space-1)]">Invoice</p>
-            <p>{order.invoiceUrl
-              ? <a href={order.invoiceUrl} target="_blank" rel="noopener noreferrer" className="text-[var(--color-brand)] underline">{order.invoiceNumber}</a>
-              : order.invoiceNumber}</p>
-          </div>
-        )}
+        <div>
+          <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] mb-[var(--space-1)]">Ordered</p>
+          <p className="text-[var(--text-xs)] text-[var(--color-text-muted)]">{formatDate(order.submittedAt ?? order.createdAt)}</p>
+        </div>
       </div>
 
       {/* Line items */}
@@ -226,7 +215,13 @@ export function OrderDetail({ order, user }: { order: OrderFull; user: AppUser }
       )}
 
       {/* Work Order (internal only) */}
-      <WorkOrderSection workOrder={order.workOrder} user={user} />
+      <WorkOrderSection
+        workOrder={order.workOrder}
+        user={user}
+        orderId={order.id}
+        orderStatus={order.status}
+        canClaim={can(user, "order:claim")}
+      />
 
       {/* Comments thread */}
       <section>

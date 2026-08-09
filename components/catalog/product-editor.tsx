@@ -63,8 +63,8 @@ export function ProductEditor({ product, materials }: Props) {
             borderRadius: "var(--radius-pill)",
             fontSize:     "var(--text-xs)",
             fontWeight:   "var(--weight-medium)",
-            background:   product.customerVisible ? "var(--color-success-subtle)" : "var(--color-neutral-subtle)",
-            color:        product.customerVisible ? "var(--color-success)" : "var(--color-text-muted)",
+            background:   product.customerVisible ? "var(--status-success-bg)" : "var(--status-neutral-bg)",
+            color:        product.customerVisible ? "var(--status-success-text)" : "var(--color-text-muted)",
           }}
         >
           {product.customerVisible ? "Customer visible" : "Internal only"}
@@ -173,7 +173,7 @@ export function ProductEditor({ product, materials }: Props) {
             <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)", marginTop: 0, marginBottom: "var(--space-4)" }}>
               Select every material approved for this kit. A material is offered during ordering only when a wide-enough active roll and a selling price are both available.
             </p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "var(--space-3)" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "var(--space-3)" }}>
               {activeMaterials.map((mat) => {
                 const checked = materialIds.includes(mat.id);
                 const required = product.requiredRollWidthIn ? parseFloat(product.requiredRollWidthIn) : 0;
@@ -223,7 +223,7 @@ export function ProductEditor({ product, materials }: Props) {
                         display:    "block",
                         marginTop:  "var(--space-1)",
                         fontSize:   "var(--text-xs)",
-                        color:      suitableRoll ? "var(--color-success)" : "var(--color-warning)",
+                        color:      suitableRoll ? "var(--status-success-text)" : "var(--status-warning-text)",
                       }}
                     >
                       {suitableRoll

@@ -1,4 +1,4 @@
-import { requireUser }   from "@/lib/auth";
+import { requireEffectiveUser }   from "@/lib/auth";
 import { can }           from "@/lib/authz/policy";
 import { redirect }      from "next/navigation";
 import { listProducts }  from "@/lib/catalog/service";
@@ -14,7 +14,7 @@ export default async function CatalogPage({
 }: {
   searchParams: Promise<{ q?: string; page?: string }>;
 }) {
-  const user = await requireUser();
+  const user = await requireEffectiveUser();
   if (!can(user, "catalog:view")) redirect("/dashboard");
 
   const params = await searchParams;

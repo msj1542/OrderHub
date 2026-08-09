@@ -5,11 +5,16 @@ const base: OperationsSettingsInput = {
   businessTimezone:   "America/Chicago",
   rushFeeMode:        "percentage",
   rushFeeValue:       20,
+  rushFeeTierMaxPercent: 34.5,
+  rushFeeTierMinPercent: 3,
   cutoffWeekday:      "Monday",
   cutoffTime:         "12:00",
   completionWeekday:  "Friday",
   completionTime:     "15:30",
+  completionWeekOffset: "same",
   duplicateWindowDays: 3,
+  labelWidthIn:       3,
+  labelHeightIn:      1,
 };
 
 describe("validateOperationsSettings", () => {
@@ -50,5 +55,13 @@ describe("validateOperationsSettings", () => {
 
   it("allows a zero-day duplicate window (feature disabled)", () => {
     expect(validateOperationsSettings({ ...base, duplicateWindowDays: 0 })).toBeNull();
+  });
+
+  it("rejects an invalid completion week offset", () => {
+    expect(validateOperationsSettings({ ...base, completionWeekOffset: "bogus" })).toMatch(/completion week offset/i);
+  });
+
+  it("allows 'next' as a completion week offset", () => {
+    expect(validateOperationsSettings({ ...base, completionWeekOffset: "next" })).toBeNull();
   });
 });

@@ -5,11 +5,12 @@ import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/pricing/money";
 import { ORDER_STATUS_LABELS, type OrderSummary, type OrderStatus } from "@/lib/db/schema";
-import { ORDER_STATUS_FAMILY, StatusPill } from "@/components/ui/status-pill";
+import { orderStatusDisplay, StatusPill } from "@/components/ui/status-pill";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ClipboardList } from "lucide-react";
 
 type Props = {
@@ -18,7 +19,7 @@ type Props = {
   page:         number;
   pageSize:     number;
   search:       string;
-  status:       OrderStatus | "";
+  status:       OrderStatus | "active" | "all";
   selectedId?:  string;
   canSeePrice:  boolean;
   isInternal:   boolean;
@@ -54,7 +55,10 @@ export function OrdersWorkspace({
     const st     = next.status !== undefined ? next.status : status;
     const pg     = next.page  !== undefined ? next.page  : page;
     if (q) params.set("q", q);
-    if (st) params.set("status", st);
+    // Always explicit — "active" is the default only when the param is
+    // absent entirely, so once the user has touched the filter we must
+    // keep writing it (including "all") or a refresh would silently revert.
+    params.set("status", st);
     if (pg && pg > 1) params.set("page", String(pg));
     router.push(`${pathname}?${params.toString()}`);
   }
@@ -63,13 +67,13 @@ export function OrdersWorkspace({
     const params = new URLSearchParams();
     params.set("id", id);
     if (search) params.set("q", search);
-    if (status) params.set("status", status);
+    params.set("status", status);
     if (page > 1) params.set("page", String(page));
     router.push(`${pathname}?${params.toString()}`);
   }
 
-  function setStatusFilter(next: OrderStatus | "") {
-    updateParams({ status: next === status ? "" : next, page: undefined });
+  function setStatusFilter(next: OrderStatus | "active" | "all") {
+    updateParams({ status: next, page: undefined });
   }
 
   return (
@@ -82,35 +86,18 @@ export function OrdersWorkspace({
           onChange={(e) => setSearchInput(e.target.value)}
           aria-label="Search orders"
         />
-        <div className="flex flex-wrap gap-[var(--space-2)]">
-          <button
-            onClick={() => setStatusFilter("")}
-            aria-pressed={status === ""}
-            className={cn(
-              "px-[var(--space-3)] py-[var(--space-1)] rounded-[var(--radius-pill)] text-[var(--text-xs)] border transition-colors",
-              status === ""
-                ? "bg-[var(--color-brand)] text-[var(--color-brand-fg)] border-[var(--color-brand)]"
-                : "bg-[var(--color-panel)] text-[var(--color-text-muted)] border-[var(--color-border-default)] hover:bg-[var(--color-sunken)]"
-            )}
-          >
-            All
-          </button>
-          {ALL_STATUSES.map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              aria-pressed={status === s}
-              className={cn(
-                "px-[var(--space-3)] py-[var(--space-1)] rounded-[var(--radius-pill)] text-[var(--text-xs)] border transition-colors",
-                status === s
-                  ? "bg-[var(--color-brand)] text-[var(--color-brand-fg)] border-[var(--color-brand)]"
-                  : "bg-[var(--color-panel)] text-[var(--color-text-muted)] border-[var(--color-border-default)] hover:bg-[var(--color-sunken)]"
-              )}
-            >
-              {ORDER_STATUS_LABELS[s]}
-            </button>
-          ))}
-        </div>
+        <Select value={status} onValueChange={(v) => setStatusFilter(v as OrderStatus | "active" | "all")}>
+          <SelectTrigger aria-label="Filter by status" style={{ width: "220px" }}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="all">All Statuses</SelectItem>
+            {ALL_STATUSES.map((s) => (
+              <SelectItem key={s} value={s}>{ORDER_STATUS_LABELS[s]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Order list */}
@@ -119,12 +106,16 @@ export function OrdersWorkspace({
           <EmptyState
             icon={<ClipboardList size={32} />}
             title="No orders"
-            description={search || status ? "No orders match your filters." : "No orders yet."}
+            description={search || status !== "active" ? "No orders match your filters." : "No orders yet."}
           />
         ) : (
           <ul>
             {orders.map((order) => {
-              const family = ORDER_STATUS_FAMILY[order.status] ?? "neutral";
+              const status = orderStatusDisplay(
+                order.status,
+                ORDER_STATUS_LABELS[order.status as OrderStatus] ?? order.status,
+                isInternal,
+              );
               const isSelected = order.id === selectedId;
               return (
                 <li
@@ -137,16 +128,19 @@ export function OrdersWorkspace({
                   )}
                 >
                   <div className="flex items-center justify-between gap-[var(--space-3)]">
-                    <span className="text-[var(--text-sm)] font-[var(--weight-semibold)] text-[var(--color-text-primary)]">
-                      {order.orderNumber ?? "Draft"}
+                    <span className="flex items-center gap-[var(--space-2)] min-w-0">
+                      <span className="text-[var(--text-sm)] font-[var(--weight-semibold)] text-[var(--color-text-primary)]">
+                        {order.orderNumber ?? "Draft"}
+                      </span>
+                      {order.isExpedited && (
+                        <span className="text-[var(--text-xs)] font-[var(--weight-bold)] text-[var(--status-urgent-text)] uppercase tracking-wide">
+                          Expedited
+                        </span>
+                      )}
                     </span>
-                    <div className="flex items-center gap-[var(--space-2)]">
-                      {order.isExpedited && <StatusPill label="Exp" family="urgent" />}
+                    <div className="flex items-center gap-[var(--space-2)] shrink-0">
                       {order.cancellationRequested && <Badge variant="warning">Cancel Req.</Badge>}
-                      <StatusPill
-                        label={ORDER_STATUS_LABELS[order.status as OrderStatus] ?? order.status}
-                        family={family}
-                      />
+                      <StatusPill label={status.label} family={status.family} />
                     </div>
                   </div>
                   <div className="flex items-center justify-between gap-[var(--space-2)] text-[var(--text-xs)] text-[var(--color-text-muted)]">
