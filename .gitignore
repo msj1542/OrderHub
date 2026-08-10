@@ -45,3 +45,8 @@ drizzle/
 # reference only, already distilled into build_phase_reviews/Plan_and_Progress.md
 build_phase_reviews/Revisions.zip
 build_phase_reviews/extracted/
+
+# catalog file bulk-import staging — raw source files dropped here for
+# scripts/import-catalog-files.mjs to read; already durably stored in
+# Supabase Storage once imported, no need to duplicate in git history
+catalog-files-import/

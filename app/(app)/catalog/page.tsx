@@ -43,6 +43,7 @@ export default async function CatalogPage({
       search={search}
       materials={materials}
       pricingVisible={pricingVisible}
+      isInternal={user.role.isInternal}
     />
   );
 }

@@ -18,9 +18,10 @@ interface Props {
   search:         string;
   materials:      MaterialWithRolls[];
   pricingVisible: boolean;
+  isInternal:     boolean;
 }
 
-export function CatalogBrowse({ products, total, page, pageSize, search, materials, pricingVisible }: Props) {
+export function CatalogBrowse({ products, total, page, pageSize, search, materials, pricingVisible, isInternal }: Props) {
   const router   = useRouter();
   const pathname = usePathname();
   const [query, setQuery] = useState(search);
@@ -52,10 +53,7 @@ export function CatalogBrowse({ products, total, page, pageSize, search, materia
       sortValue: (p) => p.partName,
       render:    (p) => (
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <span style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)", fontWeight: "var(--weight-medium)" }}>
-            {p.sku}
-          </span>
-          <strong style={{ fontSize: "var(--text-base)" }}>{p.partName}</strong>
+          <strong style={{ fontSize: "var(--text-base)" }}>{p.sku}</strong>
           <small style={{ color: "var(--color-text-muted)", fontSize: "var(--text-xs)" }}>
             {p.description.split("\n")[0]}
           </small>
@@ -148,7 +146,7 @@ export function CatalogBrowse({ products, total, page, pageSize, search, materia
         rows={products}
         getKey={(p) => p.id}
         expandedContent={(p) => (
-          <ProductDetails product={p} pricingVisible={pricingVisible} />
+          <ProductDetails product={p} isInternal={isInternal} />
         )}
         emptyState={
           <EmptyState

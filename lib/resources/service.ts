@@ -7,7 +7,7 @@
  * supabase/migrations/0006_phase6.sql exactly — keep the two in sync.
  */
 
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   resources, resourceCategories, resourceVersions,
@@ -39,10 +39,11 @@ export async function updateCategory(
 
 export async function listResources(
   user: AppUser,
-  filters: { categoryId?: string } = {},
+  filters: { categoryId?: string; productIds?: string[] } = {},
 ): Promise<ResourceWithVersion[]> {
   const conditions = [];
   if (filters.categoryId) conditions.push(eq(resources.categoryId, filters.categoryId));
+  if (filters.productIds) conditions.push(inArray(resources.productId, filters.productIds));
 
   const rows = await db
     .select({ resource: resources, categoryName: resourceCategories.name })
@@ -61,11 +62,11 @@ export async function listResources(
   const allVersions = await db
     .select()
     .from(resourceVersions)
+    .where(inArray(resourceVersions.resourceId, resourceIds))
     .orderBy(desc(resourceVersions.createdAt));
   const versionsById = new Map(allVersions.map((v) => [v.id, v]));
   const countByResource = new Map<string, number>();
   for (const v of allVersions) {
-    if (!resourceIds.includes(v.resourceId)) continue;
     countByResource.set(v.resourceId, (countByResource.get(v.resourceId) ?? 0) + 1);
   }
 
