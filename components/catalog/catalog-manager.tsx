@@ -5,17 +5,20 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button }       from "@/components/ui/button";
 import { EmptyState }   from "@/components/ui/empty-state";
 import { Layers }       from "lucide-react";
-import type { MaterialWithRolls, ProductWithMaterials } from "@/lib/db/schema";
+import type { MaterialWithRolls, ProductWithMaterials, VehicleModel } from "@/lib/db/schema";
 import { ProductEditor } from "./product-editor";
 import { CsvImport }     from "./csv-import";
 
 interface Props {
-  products:   ProductWithMaterials[];
-  materials:  MaterialWithRolls[];
-  canImport:  boolean;
+  products:          ProductWithMaterials[];
+  materials:         MaterialWithRolls[];
+  vehicleModels:     VehicleModel[];
+  fitmentsByProduct: Record<string, string[]>;
+  canImport:         boolean;
+  businessTimezone:  string;
 }
 
-export function CatalogManager({ products, materials, canImport }: Props) {
+export function CatalogManager({ products, materials, vehicleModels, fitmentsByProduct, canImport, businessTimezone }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(products[0]?.id ?? null);
   const [query,      setQuery]      = useState("");
 
@@ -160,6 +163,9 @@ export function CatalogManager({ products, materials, canImport }: Props) {
               key={`${selected.id}-${selected.updatedAt}`}
               product={selected}
               materials={materials}
+              vehicleModels={vehicleModels}
+              initialVehicleModelIds={fitmentsByProduct[selected.id] ?? []}
+              businessTimezone={businessTimezone}
             />
           ) : (
             <div

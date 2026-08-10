@@ -68,6 +68,18 @@ describe("computeExpectedCompletion", () => {
     expect(result).toBe("2025-01-17");
   });
 
+  // Regression: computeExpectedCompletion must anchor on the *business
+  // timezone's* calendar date, not now's raw UTC date. Chicago is behind
+  // UTC, so evening local time already reads as the next UTC day — using
+  // the UTC date as the base silently shifted every result +1 day.
+  it("order placed Sunday evening (UTC date already rolled to Monday) → still keyed off the local Sunday", () => {
+    // Sunday 2026-08-09, 8:00pm CDT = Monday 2026-08-10, 01:00 UTC.
+    const now = winterDate("2026-08-10T01:00:00Z");
+    const cutoffMidnight: AppSettings = { ...BASE_SETTINGS, cutoffTime: "00:00" };
+    const result = computeExpectedCompletion(cutoffMidnight, now);
+    expect(result).toBe("2026-08-14"); // Friday the 14th, not Saturday the 15th
+  });
+
   it("completionWeekOffset='next' pushes an otherwise-same-week completion out a full cycle", () => {
     // cutoff Monday / completion Tuesday is ambiguous: "same" week reads as
     // a 1-day turnaround, "next" reads as an 8-day turnaround.
@@ -165,6 +177,16 @@ function businessDayAfter(dateStr: string): string {
   } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
   return d.toISOString().slice(0, 10);
 }
+
+describe("getExpeditedDateWindow — regression: Sunday evening in Chicago (UTC date already rolled to Monday)", () => {
+  it("window is keyed off local Sunday, not UTC Monday — Tue/Wed/Thu, not Wed/Thu/Fri", () => {
+    // Sunday 2026-08-09, 8:00pm CDT = Monday 2026-08-10, 01:00 UTC.
+    const now = new Date("2026-08-10T01:00:00Z");
+    const cutoffMidnight: AppSettings = { ...TIERED_SETTINGS, cutoffTime: "00:00" };
+    const window = getExpeditedDateWindow(cutoffMidnight, now);
+    expect(window.min).toBe("2026-08-11"); // Tuesday
+  });
+});
 
 describe("worked scenario 1 — placed Friday 1:30pm (rushFeeCalculation.md)", () => {
   // Friday 2026-08-14, 1:30pm CDT = 18:30 UTC.

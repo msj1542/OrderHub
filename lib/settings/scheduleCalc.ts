@@ -5,7 +5,7 @@
  * getSettings() (which does read the database) lives in schedule.ts.
  */
 
-import { getLocalWallTime } from "./tz";
+import { getLocalWallTime, dateStrInTz } from "./tz";
 
 export type AppSettings = {
   businessTimezone:    string;
@@ -93,9 +93,12 @@ export function computeExpectedCompletion(settings: AppSettings, now: Date): str
 
   const daysToTarget = expectedCompletionDaysOut(settings, nowDayIdx, localMinutes);
 
-  const completionDate = new Date(now);
+  // Anchor on the business-timezone calendar date, not now's raw UTC date —
+  // they diverge whenever the business tz is far enough behind/ahead of UTC
+  // that the wall-clock day has already turned relative to the UTC day.
+  const completionDate = parseDateOnly(dateStrInTz(now, tz));
   completionDate.setUTCDate(completionDate.getUTCDate() + daysToTarget);
-  return completionDate.toISOString().slice(0, 10);
+  return toDateOnlyString(completionDate);
 }
 
 // ── Business-day date helpers ────────────────────────────────
@@ -181,7 +184,9 @@ function computeWindowMinMax(settings: AppSettings, now: Date): { min: string; m
   const [cutoffH, cutoffM] = settings.cutoffTime.split(":").map(Number);
   const cutoffMinutes = cutoffH * 60 + (cutoffM ?? 0);
 
-  const todayStr = toDateOnlyString(now);
+  // Business-timezone calendar date, not now's raw UTC date — see
+  // computeExpectedCompletion for why these can diverge by a day.
+  const todayStr = dateStrInTz(now, tz);
   let min = firstBusinessDayAfter(todayStr);
   if (localMinutes > cutoffMinutes) {
     // Past today's cutoff-time threshold — the immediate next business day

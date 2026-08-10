@@ -14,11 +14,15 @@ import {
   getMaterial,
   listMaterials,
 } from "@/lib/catalog/service";
+import { setProductVehicleFitments, createVehicleModel } from "@/lib/compatibility/service";
+import type { VehicleModel } from "@/lib/db/schema";
 import { parseCsv, validateProductImport, validatePricingImport, productRowToValues } from "@/lib/catalog/csv";
 import { db } from "@/lib/db";
 import { prices, products } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { createClient }  from "@/lib/supabase/server";
+import { getSettings }   from "@/lib/settings/schedule";
+import { todayInTz }     from "@/lib/settings/tz";
 
 // ── Product CRUD ──────────────────────────────────────────────
 
@@ -48,9 +52,11 @@ export async function saveProductAction(
   const isActive        = formData.getAll("isActive").includes("true");
   const customerVisible = formData.getAll("customerVisible").includes("true");
   const revision        = (formData.get("revision") as string) || null;
-  const effectiveDate   = (formData.get("effectiveDate") as string) || new Date().toISOString().slice(0, 10);
+  const effectiveDate   = (formData.get("effectiveDate") as string)
+    || todayInTz((await getSettings()).businessTimezone);
 
   const materialIds     = (formData.getAll("materialIds") as string[]);
+  const vehicleModelIds = (formData.getAll("vehicleModelIds") as string[]);
   // prices: material_id → unit_price pairs sent as "price_<materialId>"
   const allMaterials    = await listMaterials();
 
@@ -81,6 +87,7 @@ export async function saveProductAction(
     }
 
     await setProductMaterials(productId, materialIds);
+    await setProductVehicleFitments(productId, vehicleModelIds);
 
     for (const mat of allMaterials) {
       const priceStr = formData.get(`price_${mat.id}`) as string | null;
@@ -94,11 +101,39 @@ export async function saveProductAction(
 
     revalidatePath("/catalog");
     revalidatePath("/settings/catalog");
+    revalidatePath("/compatibility");
     return { success: id ? "Product saved." : "Product created." };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Save failed.";
     return { error: msg };
   }
+}
+
+// ── Vehicle fitment ──────────────────────────────────────────────
+
+/**
+ * Creates a new vehicle model for the fitment MultiSelect's "add a new
+ * vehicle model" mini-form — a plain callable action (not useActionState),
+ * since the caller needs the created row back to add it to client state
+ * immediately, not just a success/error message.
+ */
+export async function createVehicleModelAction(data: {
+  brand: string;
+  model: string;
+  yearStart?: string;
+}): Promise<VehicleModel> {
+  const [user, preview] = await Promise.all([requireUser(), getPreviewContext()]);
+  if (!can(user, "catalog:manage")) throw new Error("Not authorized.");
+  assertNotPreview(preview);
+
+  if (!data.brand.trim() || !data.model.trim()) {
+    throw new Error("Brand and model are required.");
+  }
+
+  const created = await createVehicleModel(data);
+  revalidatePath("/settings/catalog");
+  revalidatePath("/compatibility");
+  return created;
 }
 
 // ── File upload ───────────────────────────────────────────────
@@ -253,13 +288,14 @@ export async function applyImportAction(
         };
       }
 
+      const todayFallback = todayInTz((await getSettings()).businessTimezone);
       for (const row of rows) {
         const sku = row.SKU?.trim();
         if (!sku) continue;
         const product = existingById.get(sku);
         if (!product) continue;
 
-        const effectiveDate = row.EffectiveDate || new Date().toISOString().slice(0, 10);
+        const effectiveDate = row.EffectiveDate || todayFallback;
         const revision      = row.PriceListRevision || null;
 
         const gloss = parseFloat(row.GlossPrice);

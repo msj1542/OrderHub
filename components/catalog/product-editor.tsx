@@ -7,18 +7,27 @@ import { Label }      from "@/components/ui/label";
 import { Textarea }   from "@/components/ui/textarea";
 import { Alert }      from "@/components/ui/alert";
 import { FieldHint }  from "@/components/ui/field-hint";
+import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
 import { formatMoney } from "@/lib/pricing/money";
-import type { MaterialWithRolls, ProductWithMaterials } from "@/lib/db/schema";
-import { saveProductAction, uploadProductFileAction } from "@/app/(app)/settings/catalog/actions";
+import { todayInTz } from "@/lib/settings/tz";
+import type { MaterialWithRolls, ProductWithMaterials, VehicleModel } from "@/lib/db/schema";
+import { saveProductAction, uploadProductFileAction, createVehicleModelAction } from "@/app/(app)/settings/catalog/actions";
 
 interface Props {
   product:   ProductWithMaterials;
   materials: MaterialWithRolls[];
+  vehicleModels: VehicleModel[];
+  initialVehicleModelIds: string[];
+  businessTimezone: string;
 }
 
 const INITIAL: { error?: string; success?: string } = {};
 
-export function ProductEditor({ product, materials }: Props) {
+function vehicleModelLabel(m: Pick<VehicleModel, "brand" | "model" | "yearStart">) {
+  return m.yearStart ? `${m.brand} ${m.model} (${m.yearStart}+)` : `${m.brand} ${m.model}`;
+}
+
+export function ProductEditor({ product, materials, vehicleModels, initialVehicleModelIds, businessTimezone }: Props) {
   const [saveState, saveAction, savePending] = useActionState(saveProductAction, INITIAL);
   const [uploadState, uploadAction, uploadPending] = useActionState(uploadProductFileAction, INITIAL);
 
@@ -31,6 +40,37 @@ export function ProductEditor({ product, materials }: Props) {
   }
 
   const activeMaterials = materials.filter((m) => m.isActive);
+
+  // Vehicle fitment — which motorcycle model/years this kit fits (see
+  // lib/compatibility/service.ts). `modelOptions` starts from the server
+  // list and grows client-side when a new vehicle model is added inline,
+  // so it's immediately selectable without a full page reload.
+  const [modelOptions, setModelOptions] = useState<VehicleModel[]>(vehicleModels);
+  const [vehicleModelIds, setVehicleModelIds] = useState<string[]>(initialVehicleModelIds);
+  const multiSelectOptions: MultiSelectOption[] = modelOptions
+    .map((m) => ({ id: m.id, label: vehicleModelLabel(m) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  const [newModel, setNewModel] = useState({ brand: "Harley Davidson", model: "", yearStart: "" });
+  const [addingModel, startAddModel] = useTransition();
+  const [addModelError, setAddModelError] = useState<string | null>(null);
+  const [showAddModel, setShowAddModel] = useState(false);
+
+  function handleAddVehicleModel() {
+    if (!newModel.model.trim()) { setAddModelError("Model name is required."); return; }
+    setAddModelError(null);
+    startAddModel(async () => {
+      try {
+        const created = await createVehicleModelAction(newModel);
+        setModelOptions((prev) => [...prev, created]);
+        setVehicleModelIds((prev) => [...prev, created.id]);
+        setNewModel({ brand: newModel.brand, model: "", yearStart: "" });
+        setShowAddModel(false);
+      } catch (err) {
+        setAddModelError(err instanceof Error ? err.message : "Could not add vehicle model.");
+      }
+    });
+  }
 
   return (
     <section
@@ -234,6 +274,106 @@ export function ProductEditor({ product, materials }: Props) {
             </div>
           </fieldset>
 
+          {/* Vehicle fitment */}
+          <fieldset
+            style={{
+              border:       "1px solid var(--color-border-default)",
+              borderRadius: "var(--radius-md)",
+              padding:      "var(--space-4)",
+              marginBottom: "var(--space-5)",
+            }}
+          >
+            <legend
+              style={{
+                padding:    "0 var(--space-2)",
+                fontSize:   "var(--text-sm)",
+                fontWeight: "var(--weight-semibold)",
+              }}
+            >
+              Vehicle fitment
+            </legend>
+            <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)", marginTop: 0, marginBottom: "var(--space-3)" }}>
+              Which motorcycle model/years this kit fits — drives the Compatibility page&apos;s By
+              Motorcycle and By Kit views. Search to add; if a model isn&apos;t listed yet, add it below.
+            </p>
+
+            {vehicleModelIds.map((id) => (
+              <input key={id} type="hidden" name="vehicleModelIds" value={id} />
+            ))}
+
+            <MultiSelect
+              options={multiSelectOptions}
+              selectedIds={vehicleModelIds}
+              onChange={setVehicleModelIds}
+              placeholder="Search motorcycle models…"
+              emptyText="No matching models — add a new one below."
+            />
+
+            <div style={{ marginTop: "var(--space-3)" }}>
+              {!showAddModel ? (
+                <button
+                  type="button"
+                  onClick={() => setShowAddModel(true)}
+                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: "var(--text-xs)", color: "var(--color-brand)", padding: 0 }}
+                >
+                  + Add a new vehicle model
+                </button>
+              ) : (
+                <div
+                  style={{
+                    padding:      "var(--space-3)",
+                    border:       "1px solid var(--color-border-subtle)",
+                    borderRadius: "var(--radius-md)",
+                    background:   "var(--color-canvas)",
+                  }}
+                >
+                  {addModelError && (
+                    <Alert variant="danger" className="mb-3">{addModelError}</Alert>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-[var(--space-3)]">
+                    <div>
+                      <Label htmlFor="new-model-brand" style={{ fontSize: "var(--text-xs)" }}>Brand</Label>
+                      <Input
+                        id="new-model-brand"
+                        value={newModel.brand}
+                        onChange={(e) => setNewModel({ ...newModel, brand: e.target.value })}
+                        style={{ fontSize: "var(--text-sm)" }}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="new-model-model" style={{ fontSize: "var(--text-xs)" }}>Model</Label>
+                      <Input
+                        id="new-model-model"
+                        value={newModel.model}
+                        onChange={(e) => setNewModel({ ...newModel, model: e.target.value })}
+                        placeholder="e.g. Road Glide"
+                        style={{ fontSize: "var(--text-sm)" }}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="new-model-year" style={{ fontSize: "var(--text-xs)" }}>Start year</Label>
+                      <Input
+                        id="new-model-year"
+                        value={newModel.yearStart}
+                        onChange={(e) => setNewModel({ ...newModel, yearStart: e.target.value })}
+                        placeholder="e.g. 2027"
+                        style={{ fontSize: "var(--text-sm)" }}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
+                    <Button type="button" size="sm" disabled={addingModel} onClick={handleAddVehicleModel}>
+                      {addingModel ? "Adding…" : "Add & Select"}
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => { setShowAddModel(false); setAddModelError(null); }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </fieldset>
+
           {/* Price revision */}
           <div
             className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-4)]"
@@ -249,7 +389,7 @@ export function ProductEditor({ product, materials }: Props) {
                 id="effectiveDate"
                 name="effectiveDate"
                 type="date"
-                defaultValue={product.priceEffectiveDate ?? new Date().toISOString().slice(0, 10)}
+                defaultValue={product.priceEffectiveDate ?? todayInTz(businessTimezone)}
               />
             </div>
           </div>

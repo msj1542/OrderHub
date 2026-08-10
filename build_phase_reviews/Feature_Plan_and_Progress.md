@@ -5,9 +5,11 @@ separately from `Plan_and_Progress.md` (the prior 6-phase post-build revision pa
 out) since this is a new, unrelated batch of work — phases below are "Phase N" of *this* doc,
 not a continuation of that one's numbering.
 
-**Item → Phase mapping** (see the approved plan for full detail,
-`C:\Users\mjager\.claude\plans\dynamic-inventing-music.md` — that file is a one-time approval
-artifact outside the repo; this doc is the durable one):
+**Item → Phase mapping.** (A plan-mode approval file existed at
+`C:\Users\mjager\.claude\plans\dynamic-inventing-music.md` during planning — it was a one-time,
+session-scoped artifact outside the repo, not guaranteed to persist or be reachable from a later
+session. Everything in it is duplicated here, in equal or greater detail, per phase below. This
+doc is the only source of truth going forward; don't look for or depend on that file.)
 
 | # | Item | Phase |
 |---|---|---|
@@ -99,6 +101,104 @@ not browser-verified, see Progress Log)
 | 5.3 | Write + run the (idempotent) import script | `scripts/import-vehicle-fitments.mjs` |
 | 5.4 | Service layer (single fetch, client-side grouping) | `lib/compatibility/service.ts` |
 | 5.5 | Page + two-tab browse UI (By Motorcycle / By Kit) + nav entry | `app/(app)/compatibility/page.tsx`, `components/compatibility/compatibility-browse.tsx`, `components/layout/sidebar.tsx` |
+
+---
+
+## Phase 6 — Post-launch follow-ups (in progress, session handed off mid-work)
+
+This phase covers work requested *after* the original 6 items closed out: two live bugs found via
+real browser testing (see Phase 5's own progress entries), a discussion (not yet built) of
+granular per-role permissions, and an in-progress admin UI for editing vehicle compatibility data.
+**The session doing this work was interrupted and handed off before finishing — read this section
+in full before continuing, don't assume anything below is done just because code exists.**
+
+**Status: IN PROGRESS — uncommitted, not visually verified, one bug actively being diagnosed.**
+
+| # | Task | Status |
+|---|------|--------|
+| 6.1 | Cutoff-countdown NaN bug (Phase 1's own regression) | **Done**, committed `67c6731` |
+| 6.2 | Settings nav clipped/unreachable tabs on narrow viewports | **Done**, committed `db69039`, then revised (auto-scroll + edge fade) per user feedback, committed `8f631e3` |
+| 6.3 | Granular permission controls — discussed, not built | **Deferred at user's request** ("we will wait on the permission change for now"). See the 2026-08-09/10 discussion in the Progress Log below for the agreed-on scope if this resumes: an editable matrix for the **8 existing roles only** (no custom-role creation), reworking `can()`'s internals to read a new DB-backed permission table instead of the static map in `lib/authz/policy.ts` — the ~98 `can()` call sites across the app do NOT need to change. Keep `internal_admin` fixed at "all permissions," not editable. Group grid rows by each feature's *real* action set (already grouped by naming convention: `order:*`, `production:*`, etc.) rather than forcing every feature into a uniform 3-column View/Edit/Delete shape — Orders/Production are a status machine, not CRUD, and collapsing them would reduce granularity versus what exists today. |
+| 6.4 | Vehicle fitment editor in Product Editor (Settings → Catalog) | **Code complete, UNCOMMITTED, NOT visually confirmed working** — see below |
+| 6.5 | New date/timezone regression: cutoff shows "Saturday the 15th" instead of "Friday the 14th"; expedited-date picker's valid days shifted +1 (should offer Tue/Wed/Thu when today is Sunday, offers Wed/Thu/Fri instead) | **Reported by user, NOT YET DIAGNOSED** — session was interrupted mid-investigation |
+
+### 6.4 detail — what exists, what's unverified
+
+Per the user's explicit request ("yes" to the plan two messages prior), built: a new reusable
+`components/ui/multi-select.tsx` (searchable dropdown + removable chips — no equivalent existed
+in the design system before), a "Vehicle Fitment" fieldset added to
+`components/catalog/product-editor.tsx` (mirrors the existing "Compatible materials" fieldset
+pattern exactly), an inline "+ Add a new vehicle model" mini-form (Brand/Model/Year — vehicle
+models are structured 3-field records, not a flat label, so this can't be a bare tag-input
+add-new), a new `createVehicleModelAction` in `app/(app)/settings/catalog/actions.ts`, and new
+service functions in `lib/compatibility/service.ts` (`listVehicleModels`,
+`listAllProductVehicleModelIds`, `createVehicleModel`, `setProductVehicleFitments`). Data flows
+`app/(app)/settings/catalog/page.tsx` → `CatalogManager` → `ProductEditor`.
+
+**Verified:** `npx tsc --noEmit` clean, full suite 206/206, `npx eslint` clean on every changed
+file, impeccable's mechanical detector (`detect.mjs`) returned zero findings on the new/changed
+UI files.
+
+**NOT verified:** the user reported "I don't see any UI changes within the catalog item settings
+form" after checking their own live browser session. Two live possibilities, neither ruled out
+yet:
+1. **Wrong page** — the user may have been looking at the public/internal Catalog browse page
+   (`/catalog`, read-only `components/catalog/product-details.tsx`) rather than the admin editor
+   (`/settings/catalog` → select a product → `ProductEditor`, which is the only place this
+   feature was added). Confirm which page they checked before assuming a code bug.
+2. **Stale client-side cache** — Next.js App Router's client-side router cache can serve a stale
+   version of a route after a server-side code change, especially across a long dev-server
+   session with many edits; a hard reload (not client navigation) may be needed. The dev server
+   itself was confirmed responsive via a direct `curl` (instant 307), so if this is the cause it's
+   a caching artifact, not a hung server.
+Also not yet ruled out: an actual bug in the wiring (props not reaching `ProductEditor`, a
+silently-swallowed render error). **Next session: don't assume either explanation — check the
+browser tab's Network/Console directly, confirm the exact URL open, and hard-reload before
+concluding anything.**
+
+### 6.5 detail — timezone regression, not yet diagnosed
+
+Reported by the user in the same message as 6.4's UI report, immediately after this session had
+already fixed two other date/timezone bugs (Phase 1's own NaN fix, `67c6731`). This is a *third*,
+distinct symptom, found live:
+- Dashboard cutoff countdown's "to receive by" label reads "Saturday the 15th" — expected
+  "Friday the 14th" (completion weekday is configured as Friday, per
+  `application_settings.completion_weekday = 'Friday'`).
+- The New Order expedited-date picker's selectable days are all shifted +1: on a Sunday, it
+  should offer Tue/Wed/Thu (the schedule's earliest-to-latest expedited window) but offers
+  Wed/Thu/Fri instead.
+
+Both symptoms point at the same family of code as the earlier NaN bug —
+`lib/settings/scheduleCalc.ts` (`computeExpectedCompletion`, `computeWindowMinMax`,
+`getExpeditedDateWindow`) and/or `app/(app)/dashboard/page.tsx`'s `formatReceiveBy` — but this
+session did not get far enough to isolate the actual cause before being interrupted. Two things
+worth checking first, not yet checked:
+1. **Cutoff time is configured as `00:00` (midnight)** — `application_settings.cutoff_time =
+   '00:00'`, confirmed via direct DB query this session. A cutoff at the exact Sunday/Monday
+   boundary is an edge case worth checking specifically — `expectedCompletionDaysOut`'s
+   "pastCutoff" comparison (`nowMinutes > cutoffMinutes`) and its `daysSinceCutoff` calculation
+   in `scheduleCalc.ts` may not handle `cutoffMinutes = 0` correctly.
+2. **`formatReceiveBy` in `dashboard/page.tsx`** parses a `YYYY-MM-DD` string via
+   `new Date(y, m-1, d)` (local-timezone-implicit construction) and formats the weekday with no
+   explicit `timeZone` — flagged in this session's own Phase 1 research as "self-consistent by
+   construction" (same implicit zone used for both construct and format, so it should cancel
+   out) — but that reasoning should be re-verified against the actual observed bug, not assumed
+   correct just because it was reasoned through before. A one-day weekday/date mismatch is
+   exactly the shape of bug that assumption could hide if it's wrong.
+Recommend reproducing with a plain Node script against `lib/settings/scheduleCalc.ts` directly
+(pass the real current settings and real current time) rather than the browser, to isolate the
+exact function and line before touching any code — this session had already confirmed the
+browser automation tool itself was unreliable (a `navigate` call hung for 5+ minutes while a
+direct `curl` to the same URL returned in 60ms), so don't trust browser-based repro alone here.
+
+### Standing environment note
+
+This session observed the Browser-pane automation tool (`mcp__Claude_Browser__*`) intermittently
+hang for minutes at a time (`navigate`, `computer` screenshot, `get_page_text` all affected at
+different points) while the actual Next.js dev server remained fully responsive (confirmed via
+direct `curl`). If the next session sees similar hangs, don't assume they indicate a server-side
+problem — verify independently via `curl`/`node` scripts first, the way this session eventually
+did.
 
 ---
 
